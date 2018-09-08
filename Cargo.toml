@@ -1,0 +1,6 @@
+[package]
+name = "pfmt"
+version = "0.1.0"
+authors = ["Michail Pevnev <mpevnev@gmail.com>"]
+
+[dependencies]
