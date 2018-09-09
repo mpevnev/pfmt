@@ -119,6 +119,8 @@
 #[cfg(test)] #[macro_use] extern crate galvanic_assert;
 #[cfg(test)] #[macro_use] extern crate galvanic_test;
 
+extern crate num;
+
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
@@ -293,6 +295,44 @@ impl Fmt for bool {
 
 /// This instance has no special flags.
 /// Common options are recognised.
+impl Fmt for char {
+    fn format(&self, _flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = self.to_string();
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize
+    {
+        1
+    }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `e`, which changes the output to the scientific, or exponential,
+/// notation.
+/// Common options are recognised.
+/// Common numeric options are also recognised.
+impl Fmt for f32 {
+    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let exp = flags.contains(&'e');
+            let mut s = util::float_to_string(*self, exp, options)?;
+            util::apply_common_numeric_options(&mut s, flags, options)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize
+    {
+        20
+    }
+}
+
+/// This instance has no special flags.
+/// Common options are recognised.
 impl<'a> Fmt for &'a str {
     fn format(&self, _flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
@@ -374,6 +414,38 @@ mod tests {
             table.insert("b".to_string(), &b);
             let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
             assert_that!(&s.as_str(), eq("true, no, N"));
+        }
+
+    }
+
+    test_suite! {
+        name char;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt, FormattingError};
+
+        test boring() {
+            let c = 'z';
+            let mut table: HashMap<String, &Fmt> = HashMap::new();
+            table.insert("c".to_string(), &c);
+            let s = table.format("{c}, {c::width=l5}!").unwrap();
+            assert_that!(&s.as_str(), eq("z, z    !"));
+        }
+
+    }
+
+    test_suite! {
+        name floats;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt, FormattingError};
+
+        test exp_boring_1() {
+            let f: f32 = 1_000_000.0;
+            let mut table: HashMap<String, &Fmt> = HashMap::new();
+            table.insert("f".to_string(), &f);
+            let s = table.format("{f:e+:prec=-1}").unwrap();
+            assert_that!(&s.as_str(), eq("+1e6"));
         }
 
     }
