@@ -1,12 +1,14 @@
 #[cfg(test)] #[macro_use] extern crate galvanic_assert;
 #[cfg(test)] #[macro_use] extern crate galvanic_test;
 
-use std::collections::HashMap;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 use parse::{parse, Piece, ParseError};
 
 mod parse;
+
+pub mod util;
 
 /* ---------- base traits ---------- */
 
@@ -114,6 +116,39 @@ impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
 }
 
 /* ---------- implementations of Fmt for standard types ---------- */
+
+/// This instance is aware of the following flags:
+/// * `y`, which changes the output from true/false to yes/no;
+/// * `Y`, which changes the output to Y/N.
+/// Common justification options are available.
+impl Fmt for bool {
+    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut res = if *self {
+                if flags.contains(&'y') {
+                    "yes".to_string()
+                } else if flags.contains(&'Y') {
+                    "Y".to_string()
+                } else {
+                    "true".to_string()
+                }
+            } else {
+                if flags.contains(&'y') {
+                    "no".to_string()
+                } else if flags.contains(&'Y') {
+                    "N".to_string()
+                } else {
+                    "false".to_string()
+                }
+            };
+            util::apply_common_options(&mut res, options)?;
+            Ok(res)
+        }
+    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+        5
+    }
+}
 
 impl Fmt for i32 {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
