@@ -75,7 +75,7 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
             if is_left {
                 *s = s.chars().skip(len - truncate_to_width).collect();
             } else {
-                *s = s.chars().take(len).collect();
+                *s = s.chars().take(truncate_to_width).collect();
             }
             Ok(())
         } else {
@@ -93,9 +93,9 @@ pub fn get_justification(options: &HashMap<String, String>)
 {
     if let Some(s) = options.get("just") {
         match s.as_str() {
-            "left" => Ok(Justification::Left()),
-            "right" => Ok(Justification::Right()),
-            "center" => Ok(Justification::Center()),
+            "l" => Ok(Justification::Left()),
+            "r" => Ok(Justification::Right()),
+            "c" => Ok(Justification::Center()),
             _ => Err(InvalidOptionValue("just".to_string(),
                 s.to_string()))
         }
