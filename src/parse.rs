@@ -6,14 +6,13 @@ pub enum ParseError {
     UnbalancedBrackets(),
     NestedPlaceholders(),
     MissingOpeningBracket(),
-    MissingClosingBracket(),
     MissingPlaceholderName(),
     MissingOptionName()
 }
 
 const ESCAPE: char = '\\';
 const SETOPT: char = '=';
-const SEPARATOR: char = ':';
+const FIELD_SEPARATOR: char = ':';
 
 /// Either a literal string, or a placecholder.
 #[derive(Debug, PartialEq)]
@@ -158,7 +157,7 @@ fn extract_options(input: &str) -> Result<HashMap<String, String>, ParseError> {
             continue;
         }
         if name_start.is_some() && name_end.is_none() {
-            if ch == SEPARATOR {
+            if ch == SETOPT {
                 name_end = Some(i);
                 value_start = Some(i + 1);
                 continue;
@@ -169,7 +168,7 @@ fn extract_options(input: &str) -> Result<HashMap<String, String>, ParseError> {
             value_start = Some(i);
             continue;
         }
-        if ch == SEPARATOR {
+        if ch == FIELD_SEPARATOR {
             let name = String::from(input[name_start.unwrap() .. name_end.unwrap()].trim());
             if name.is_empty() {
                 return Err(ParseError::MissingOptionName());
@@ -212,6 +211,8 @@ fn validate_brackets(input: &str) -> Result<(), ParseError> {
 mod tests {
     test_suite! {
         name parsing_tests;
+
+        use std::collections::HashMap;
 
         use galvanic_assert::matchers::*;
 
@@ -281,5 +282,173 @@ mod tests {
             let res = parse(&s);
             assert_that!(&res, has_structure!(Err [eq(ParseError::NestedPlaceholders())]));
         }
+
+        test missing_opening_bracket() {
+            let s = String::from("}{");
+            let res = parse(&s);
+            assert_that!(&res, has_structure!(Err [eq(ParseError::MissingOpeningBracket())]));
+        }
+
+        test single_placeholder_1() {
+            let s = String::from("{asdf}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = Vec::new();
+            let opts = HashMap::new();
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_2() {
+            let s = String::from("{asdf:}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = Vec::new();
+            let opts = HashMap::new();
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_3() {
+            let s = String::from("{asdf::}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = Vec::new();
+            let opts = HashMap::new();
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_4() {
+            let s = String::from("{asdf:abc}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = vec!['a', 'b', 'c'];
+            let opts = HashMap::new();
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_5() {
+            let s = String::from("{asdf:abc:a=b}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = vec!['a', 'b', 'c'];
+            let mut opts = HashMap::new();
+            opts.insert("a".to_string(), "b".to_string());
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_6() {
+            let s = String::from("{asdf:abc:a=b:bc=as}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = vec!['a', 'b', 'c'];
+            let mut opts = HashMap::new();
+            opts.insert("a".to_string(), "b".to_string());
+            opts.insert("bc".to_string(), "as".to_string());
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_7() {
+            let s = String::from("{asdf:abc:a=:bc=}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = vec!['a', 'b', 'c'];
+            let mut opts = HashMap::new();
+            opts.insert("a".to_string(), "".to_string());
+            opts.insert("bc".to_string(), "".to_string());
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test single_placeholder_no_flags() {
+            let s = String::from("{asdf::a=bbc}");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let res = &pieces[0];
+            let flags = Vec::new();
+            let mut opts = HashMap::new();
+            opts.insert("a".to_string(), "bbc".to_string());
+            match res {
+                Piece::Literal(lit) => panic!("Expected a placeholder, got literal \"{}\"", lit),
+                Piece::Placeholder(name, actual_flags, actual_opts) => {
+                    assert_that!(&name, eq("asdf".to_string().clone()));
+                    assert_that!(&actual_flags, eq(flags.clone()));
+                    assert_that!(&actual_opts, eq(opts.clone()));
+                }
+            }
+        }
+
+        test multiple_placeholders() {
+            let s = String::from("foo{1} asdf {bar}11");
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(5));
+            assert_that!(&pieces[0], eq(Piece::Literal("foo".to_string().clone())));
+            assert_that!(&pieces[2], eq(Piece::Literal(" asdf ".to_string().clone())));
+            assert_that!(&pieces[4], eq(Piece::Literal("11".to_string().clone())));
+            let flags = Vec::new();
+            let opts = HashMap::new();
+            assert_that!(&pieces[1], eq(Piece::Placeholder("1".to_string().clone(),
+                flags.clone(),
+                opts.clone()
+                )));
+            assert_that!(&pieces[3], eq(Piece::Placeholder("bar".to_string().clone(),
+                flags.clone(),
+                opts.clone()
+                )));
+        }
+
     }
 }
