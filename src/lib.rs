@@ -8,12 +8,14 @@
  * explicit type annotations to help out the compiler) and for `Vec`s of
  * `Fmt`s.
  *
- * So once you have a format table of your choice, the only thing you need to
- * do is to 
+ * One you have a format table of your choice, the only thing you need to do is
+ * to 
+ *
  * `let maybe_string = format_table.format("see Syntax section");`
+ *
  * If you feel confident that an error is not possible (say, the format string
  * is hard-coded, as in example above, but see 'Errors' section below), just
- * `.unwrap` the `Result` you've got.
+ * `.unwrap()` the `Result` you've got.
  *
  * Note that unlike with `format!`, the format strings is not required to be
  * static. Non-static strings just carry a bit more risk of producing an error.
@@ -23,19 +25,21 @@
  * placeholder is a request for a format table to find a named `Fmt` and use
  * it here, applying flags and options from that placeholder. A placeholder
  * looks like this:
+ *
  * `"{name or (for `Vec` tables) index:flags:option1=value:option2=value...}"`
- * A placeholder is surrounded by `{}` (and if you need them in the
- * non-placeholder parts of your string, escape them with `\`), and must have a
- * name. The rest (starting with the first `:`, is optional). Flags are the
- * part between the first and the second colons, and must be specified if you
- * want to use options, which come later and are separated by colons. Each
- * options takes the form `name = value`, where both trailing and leading
+ *
+ * A placeholder is surrounded by "`{}`" (and if you need them in the
+ * non-placeholder parts of your string, escape them with a "`\`"), and must
+ * have a name. The rest (starting with the first `:`, is optional). Flags are
+ * the part between the first and the second colons, and must be specified if
+ * you want to use options, which come later and are separated by colons. Each
+ * options takes the form "`name = value`", where both trailing and leading
  * whitespace will be stripped from the name and the value. An empty name is an
  * error. An empty value is not. Colons are not allowed at the moment in either
  * names or values. There can be as many options as you want.
  *
- * Currently, `{` and `}` are not allowed in placeholder parts, either escaped
- * or not. This will be, eventually, lifted.
+ * Currently, "`{`" and "`}`" are not allowed in placeholder parts, either
+ * escaped or not. This will be, eventually, lifted.
  *
  * # Examples
  * Let's start with something boring:
@@ -83,23 +87,33 @@
  * documentation on each implementation of `Fmt` and the section "Common
  * options" below.
  *
+ * # Errors
+ * `format` method on `FormatTables` returns a `Result<String,
+ * FormattingError>`. There are three primary types of these: parsing errors
+ * which occur when the format string is not well-formed, errors arising from
+ * usage of unknown options and flags or options with invalid values, and
+ * finally errors due to requesting `Fmt`s that are missing in the table.
+ *
+ * With hard-coded format strings and rigid format tables, most of these can be
+ * safely ignored, so `unwrap()` away.
+ *
  * # Common options
  * Most pre-made implementation of `Fmt` honor several common options. Here's
  * a list of them, with detailed info available further in this section:
- * * `just`
  * * `truncate`
  * * `width`
- *
- * ## `just`: `{'l', 'c', 'r'}`
- * Controls justification of the field. If `l`, the field is left-justified, if
- * `c`, it is centered, and if `r` - right-justified. Only has effect if
- * `width` is used.
  *
  * ## `truncate`: `{'l', 'r'} + non-negative integer`
  * Controls truncation of the field. If begins with `l`, left part of the
  * field that doesn't fit is truncated, if begins with `r` - the right part is 
  * removed instead. Note that `"l0"` is not actually forbidden, just very
  * useless.
+ *
+ * ## `width`: `{'l', 'c', 'r'} + non-negative integer`
+ * Controls the width of the field. Has no effect if the field is already wider
+ * than the value supplied. If starts with "`l`", the field will be
+ * left-justified. If starts with "`c`", the field will be centered. If starts
+ * with "`r`", the field will be right-justified.
  */
 
 #[cfg(test)] #[macro_use] extern crate galvanic_assert;
@@ -292,6 +306,21 @@ impl<'a> Fmt for &'a str {
     }
 }
 
+/// This instance has no special flags.
+/// Common options are recognised.
+impl Fmt for String {
+    fn format(&self, _flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = self.clone();
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+        self.len()
+    }
+}
+
 impl Fmt for i32 {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
@@ -356,10 +385,10 @@ mod tests {
         use {FormatTable, Fmt, FormattingError};
 
         test width_left() {
-            let string = "foobar";
+            let string = "foobar".to_string();
             let mut table: HashMap<String, &Fmt> = HashMap::new();
             table.insert("s".to_string(), &string);
-            let s = table.format("{s::width=10:just=l}").unwrap();
+            let s = table.format("{s::width=l10}").unwrap();
             assert_that!(&s.as_str(), eq("foobar    "));
         }
 
@@ -367,7 +396,7 @@ mod tests {
             let string = "foobar";
             let mut table: HashMap<String, &Fmt> = HashMap::new();
             table.insert("s".to_string(), &string);
-            let s = table.format("{s::width=10:just=r}").unwrap();
+            let s = table.format("{s::width=r10}").unwrap();
             assert_that!(&s.as_str(), eq("    foobar"));
         }
 
@@ -375,7 +404,7 @@ mod tests {
             let string = "foobar";
             let mut table: HashMap<String, &Fmt> = HashMap::new();
             table.insert("s".to_string(), &string);
-            let s = table.format("{s::width=10:just=c}").unwrap();
+            let s = table.format("{s::width=c10}").unwrap();
             assert_that!(&s.as_str(), eq("  foobar  "));
         }
 

@@ -8,8 +8,7 @@ use {SingleFmtError, SingleFmtError::*};
 pub enum Justification {
     Left(),
     Center(),
-    Right(),
-    NotSpecified()
+    Right()
 }
 
 pub fn apply_common_options(s: &mut String, options: &HashMap<String, String>)
@@ -24,14 +23,21 @@ pub fn apply_width(s: &mut String, options: &HashMap<String, String>)
     -> Result<(), SingleFmtError>
 {
     if let Some(width_str) = options.get("width") {
-        if let Ok(width) = width_str.parse::<usize>() {
+        let justification = match width_str.chars().nth(0) {
+            Some('l') => Justification::Left(),
+            Some('c') => Justification::Center(),
+            Some('r') => Justification::Right(),
+            _ => return Err(SingleFmtError::InvalidOptionValue("width".to_string(), 
+                width_str.to_string()))
+        };
+        if let Ok(width) = width_str[1..].parse::<usize>() {
             let len = s.chars().count();
             if len > width {
                 return Ok(());
             }
             let delta = width - len;
-            match get_justification(options)? {
-                Justification::Left() | Justification::NotSpecified() =>  {
+            match justification {
+                Justification::Left() => {
                     let padding: String = repeat(' ').take(delta).collect();
                     s.push_str(&padding);
                 }
@@ -83,23 +89,5 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
         }
     } else {
         Ok(())
-    }
-}
-
-/* ---------- helpers ---------- */
-
-pub fn get_justification(options: &HashMap<String, String>) 
-    -> Result<Justification, SingleFmtError>
-{
-    if let Some(s) = options.get("just") {
-        match s.as_str() {
-            "l" => Ok(Justification::Left()),
-            "r" => Ok(Justification::Right()),
-            "c" => Ok(Justification::Center()),
-            _ => Err(InvalidOptionValue("just".to_string(),
-                s.to_string()))
-        }
-    } else {
-        Ok(Justification::NotSpecified())
     }
 }
