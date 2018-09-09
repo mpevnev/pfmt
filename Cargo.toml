@@ -9,4 +9,3 @@ license = "GPL-3.0-or-later"
 [dev-dependencies]
 galvanic-test = "0.1.0"
 galvanic-assert = "0.8.0"
-quickcheck = "0.7.1"
