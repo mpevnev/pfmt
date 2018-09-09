@@ -1,3 +1,7 @@
+#[cfg(test)] #[macro_use] extern crate galvanic_assert;
+#[cfg(test)] #[macro_use] extern crate galvanic_test;
+#[cfg(test)] #[macro_use] extern crate quickcheck;
+
 use std::collections::HashMap;
 
 use parse::{parse, Piece, ParseError};

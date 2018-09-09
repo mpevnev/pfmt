@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 /// Errors that occur during parsing a format string.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ParseError {
     UnbalancedBrackets(),
     NestedPlaceholders(),
@@ -16,6 +16,7 @@ const SETOPT: char = '=';
 const SEPARATOR: char = ':';
 
 /// Either a literal string, or a placecholder.
+#[derive(Debug, PartialEq)]
 pub enum Piece {
     Literal(String),
     Placeholder(String, Vec<char>, HashMap<String, String>)
@@ -55,11 +56,9 @@ pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
         prev = Some(ch);
     }
     if is_placeholder && prev == Some('}') {
-        let len = pieces.len();
-        add_placeholder(&mut pieces, input, start, len)?;
+        add_placeholder(&mut pieces, input, start, input.len())?;
     } else {
-        let len = pieces.len();
-        add_literal(&mut pieces, input, start, len);
+        add_literal(&mut pieces, input, start, input.len());
     }
     Ok(pieces)
 }
@@ -72,17 +71,25 @@ fn add_literal(pieces: &mut Vec<Piece>, input: &str, start: usize, end: usize) {
     let mut prev = None;
     let sub = &input[start..end];
     for ch in sub.chars() {
-        if ch == '{' && prev == Some(ESCAPE) {
-            s.push('{');
-        } else if ch == '}' && prev == Some(ESCAPE) {
-            s.push('}');
-        } else if prev == Some(ESCAPE) {
-            s.push(ESCAPE);
-            s.push(ch);
+        if prev == Some(ESCAPE) {
+            if ch == '{' {
+                s.push('{');
+                prev = Some(ch);
+            } else if ch == '}' {
+                s.push('}');
+                prev = Some(ch);
+            } else if ch == ESCAPE {
+                s.push(ESCAPE);
+                prev = None;
+            }
         } else {
+            if ch == ESCAPE {
+                prev = Some(ch);
+                continue;
+            }
             s.push(ch);
+            prev = Some(ch);
         }
-        prev = Some(ch);
     }
     if prev == Some(ESCAPE) {
         s.push(ESCAPE);
@@ -198,5 +205,81 @@ fn validate_brackets(input: &str) -> Result<(), ParseError> {
         Ok(())
     } else {
         Err(ParseError::UnbalancedBrackets())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    test_suite! {
+        name parsing_tests;
+
+        use galvanic_assert::matchers::*;
+
+        use parse::*;
+
+        test single_literal() {
+            let s = String::from("foobar");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(s.clone())]));
+        }
+
+        test escapes_1() {
+            let s = String::from("foobar\\{");
+            let escaped = String::from("foobar{");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
+        }
+
+        test escapes_2() {
+            let s = String::from("\\{asdf");
+            let escaped = String::from("{asdf");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
+        }
+
+        test escapes_3() {
+            let s = String::from("asdf\\{asdf");
+            let escaped = String::from("asdf{asdf");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
+        }
+
+        test escapes_4() {
+            let s = String::from("\\}asdf");
+            let escaped = String::from("}asdf");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
+        }
+
+        test escapes_5() {
+            let s = String::from("asdf\\}asdf");
+            let escaped = String::from("asdf}asdf");
+            let res = parse(&s).expect("Parse failed");
+            assert_that!(&res.len(), eq(1));
+            let lit = &res[0];
+            assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
+        }
+
+        test unbalanced_brackets() {
+            let s = String::from("{{}");
+            let res = parse(&s);
+            assert_that!(&res, has_structure!(Err [eq(ParseError::UnbalancedBrackets())]));
+        }
+
+        test nested_placeholders() {
+            let s = String::from("{{}}");
+            let res = parse(&s);
+            assert_that!(&res, has_structure!(Err [eq(ParseError::NestedPlaceholders())]));
+        }
     }
 }

@@ -2,5 +2,11 @@
 name = "pfmt"
 version = "0.1.0"
 authors = ["Michail Pevnev <mpevnev@gmail.com>"]
+license = "GPL-3.0-or-later"
 
 [dependencies]
+
+[dev-dependencies]
+galvanic-test = "0.1.0"
+galvanic-assert = "0.8.0"
+quickcheck = "0.7.1"
