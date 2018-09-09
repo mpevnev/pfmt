@@ -15,7 +15,9 @@ pub mod util;
 pub trait Fmt {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>;
-    fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize;
+    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+        0
+    }
 }
 
 pub trait FormatTable {
