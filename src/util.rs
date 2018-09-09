@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::iter::repeat;
 
-use SingleFmtError;
+use {SingleFmtError, SingleFmtError::*};
 
 /* ---------- general formatting options ---------- */
 
@@ -15,6 +15,7 @@ pub enum Justification {
 pub fn apply_common_options(s: &mut String, options: &HashMap<String, String>)
     -> Result<(), SingleFmtError>
 {
+    apply_truncation(s, options)?;
     apply_width(s, options)?;
     Ok(())
 }
@@ -47,11 +48,42 @@ pub fn apply_width(s: &mut String, options: &HashMap<String, String>)
                 }
             }
         } else {
-            return Err(SingleFmtError::InvalidOptionValue("width".to_string(),
+            return Err(InvalidOptionValue("width".to_string(),
                 width_str.to_string()));
         }
     }
     Ok(())
+}
+
+pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
+    -> Result<(), SingleFmtError>
+{
+    if let Some(opt_str) = options.get("truncate") {
+        if opt_str.is_empty() {
+            return Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()));
+        }
+        let is_left = match opt_str.chars().nth(0) {
+            Some('l') => true,
+            Some('r') => false,
+            _ => return Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()))
+        };
+        if let Ok(truncate_to_width) = opt_str[1..].parse::<usize>() {
+            let len = s.chars().count();
+            if len < truncate_to_width {
+                return Ok(());
+            }
+            if is_left {
+                *s = s.chars().skip(len - truncate_to_width).collect();
+            } else {
+                *s = s.chars().take(len).collect();
+            }
+            Ok(())
+        } else {
+            Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()))
+        }
+    } else {
+        Ok(())
+    }
 }
 
 /* ---------- helpers ---------- */
@@ -64,7 +96,7 @@ pub fn get_justification(options: &HashMap<String, String>)
             "left" => Ok(Justification::Left()),
             "right" => Ok(Justification::Right()),
             "center" => Ok(Justification::Center()),
-            _ => Err(SingleFmtError::InvalidOptionValue("just".to_string(),
+            _ => Err(InvalidOptionValue("just".to_string(),
                 s.to_string()))
         }
     } else {
