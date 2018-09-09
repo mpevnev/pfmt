@@ -2,12 +2,13 @@
 #[cfg(test)] #[macro_use] extern crate galvanic_test;
 
 use std::collections::HashMap;
+use std::borrow::Borrow;
 
 use parse::{parse, Piece, ParseError};
 
 mod parse;
 
-/* ---------- base trait ---------- */
+/* ---------- base traits ---------- */
 
 pub trait Fmt {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
@@ -15,18 +16,19 @@ pub trait Fmt {
     fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize;
 }
 
-/* ---------- the thing that does the interpolation ---------- */
-
-pub struct FormatTable {
-    fmtables: HashMap<String, Box<Fmt>>
+pub trait FormatTable {
+    fn get_fmt(&self, name: &str) -> Option<&Fmt>;
+    fn has_fmt(&self, name: &str) -> bool;
 }
+
+/* ---------- the thing that does the interpolation ---------- */
 
 impl FormatTable {
     pub fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         for piece in pieces.iter() {
             if let Piece::Placeholder(name, _, _) = piece {
-                if !self.fmtables.contains_key(name) {
+                if !self.has_fmt(name) {
                     return Err(FormattingError::UnknownFmt(name.clone()))
                 }
             }
@@ -35,7 +37,7 @@ impl FormatTable {
             match piece {
                 Piece::Literal(s) => total + s.len(),
                 Piece::Placeholder(name, flags, opts) => {
-                    let f = self.fmtables.get(name).unwrap();
+                    let f = self.get_fmt(name).unwrap();
                     total + f.size_hint(flags, opts)
                 }
             }
@@ -45,7 +47,7 @@ impl FormatTable {
             match piece {
                 Piece::Literal(s) => res.push_str(s),
                 Piece::Placeholder(name, flags, opts) => {
-                    let f = self.fmtables.get(name).unwrap();
+                    let f = self.get_fmt(name).unwrap();
                     res.push_str(&f.format(flags, opts)?);
                 }
             }
@@ -53,7 +55,6 @@ impl FormatTable {
         Ok(res)
     }
 }
-
 
 /* ---------- errors ---------- */
 
@@ -85,4 +86,26 @@ impl From<ParseError> for FormattingError {
     }
 }
 
+/* ---------- implementations of FormatTable for standard types ---------- */
+
+impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.get(name).map(|r| r.borrow())
+    }
+    fn has_fmt(&self, name: &str) -> bool {
+        self.contains_key(name)
+    }
+}
+
 /* ---------- implementations of Fmt for standard types ---------- */
+
+impl Fmt for i32 {
+    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFormatError>
+        {
+            Ok(self.to_string())
+        }
+    fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize {
+        12
+    }
+}
