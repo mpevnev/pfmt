@@ -117,6 +117,27 @@ impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
     }
 }
 
+impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        if let Ok(index) = name.parse::<usize>() {
+            if index < self.len() {
+                Some(self[index].borrow())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+    fn has_fmt(&self, name: &str) -> bool {
+        if let Ok(index) = name.parse::<usize>() {
+            index < self.len()
+        } else {
+            false
+        }
+    }
+}
+
 /* ---------- implementations of Fmt for standard types ---------- */
 
 /// This instance is aware of the following flags:
