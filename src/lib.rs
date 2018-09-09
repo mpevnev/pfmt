@@ -12,19 +12,15 @@ mod parse;
 
 pub trait Fmt {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
-        -> Result<String, SingleFormatError>;
+        -> Result<String, SingleFmtError>;
     fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize;
 }
 
 pub trait FormatTable {
     fn get_fmt(&self, name: &str) -> Option<&Fmt>;
     fn has_fmt(&self, name: &str) -> bool;
-}
 
-/* ---------- the thing that does the interpolation ---------- */
-
-impl FormatTable {
-    pub fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
+    fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         for piece in pieces.iter() {
             if let Piece::Placeholder(name, _, _) = piece {
@@ -59,30 +55,50 @@ impl FormatTable {
 /* ---------- errors ---------- */
 
 /// Errors that happen in individual formattables.
-#[derive(Debug)]
-pub enum SingleFormatError {
+#[derive(Debug, PartialEq)]
+pub enum SingleFmtError {
     UnknownFlag(char),
     UnknownOption(String),
     InvalidOptionValue(String, String)
 }
 
 /// Any error that can happen during formatting.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum FormattingError {
-    ParseError(ParseError),
-    SingleFormatError(SingleFormatError),
+    // Parsing errors.
+    UnbalancedBrackets(),
+    NestedFmts(),
+    MissingOpeningBracket(),
+    MissingFmtName(),
+    MissingOptionName(),
+    // Errors from single Fmts.
+    UnknownFlag(char),
+    UnknownOption(String),
+    InvalidOptionValue(String, String),
+    // General errors.
     UnknownFmt(String)
 }
 
-impl From<SingleFormatError> for FormattingError {
-    fn from(err: SingleFormatError) -> Self {
-        FormattingError::SingleFormatError(err)
+impl From<SingleFmtError> for FormattingError {
+    fn from(err: SingleFmtError) -> Self {
+        match err {
+            SingleFmtError::UnknownFlag(c) => FormattingError::UnknownFlag(c),
+            SingleFmtError::UnknownOption(s) => FormattingError::UnknownOption(s),
+            SingleFmtError::InvalidOptionValue(opt, val) =>
+                FormattingError::InvalidOptionValue(opt, val)
+        }
     }
 }
 
 impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
-        FormattingError::ParseError(err)
+        match err {
+            ParseError::UnbalancedBrackets() => FormattingError::UnbalancedBrackets(),
+            ParseError::NestedPlaceholders() => FormattingError::NestedFmts(),
+            ParseError::MissingOpeningBracket() => FormattingError::MissingOpeningBracket(),
+            ParseError::MissingPlaceholderName() => FormattingError::MissingFmtName(),
+            ParseError::MissingOptionName() => FormattingError::MissingOptionName()
+        }
     }
 }
 
@@ -101,11 +117,54 @@ impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
 
 impl Fmt for i32 {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
-        -> Result<String, SingleFormatError>
+        -> Result<String, SingleFmtError>
         {
+
             Ok(self.to_string())
         }
     fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize {
         12
+    }
+}
+
+/* ---------- tests ---------- */
+
+#[cfg(test)]
+mod tests {
+    test_suite! {
+        name main_formatting_tests;
+
+        use std::collections::HashMap;
+
+        use galvanic_assert::matchers::*;
+
+        use {FormatTable, Fmt, FormattingError};
+
+        test unknown_fmt() {
+            let table: HashMap<String, &Fmt> = HashMap::new();
+            let s = table.format("i = {i}");
+            assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i".to_string().clone()))));
+        }
+
+        test fmt_error() {
+            let i = 32;
+            let mut table: HashMap<String, &Fmt> = HashMap::new();
+            table.insert("i".to_string(), &i);
+            let s = table.format("i = {i::doesnt_exist=foobar}");
+            assert_that!(&s, eq(Err(FormattingError::UnknownOption("doesnt_exist"
+                                                                   .to_string()
+                                                                   .clone()))));
+        }
+
+        test integers_simple_1() {
+            let i = 1;
+            let j = 23;
+            let mut table: HashMap<String, &Fmt> = HashMap::new();
+            table.insert("i".to_string(), &i);
+            table.insert("j".to_string(), &j);
+            let s = table.format("i = {i}, j = {j}").expect("Failed to format");
+            assert_that!(&s, eq("i = 1, j = 23".to_string().clone()));
+        }
+
     }
 }
