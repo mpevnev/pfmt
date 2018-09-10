@@ -133,9 +133,12 @@ pub mod util;
 /* ---------- base traits ---------- */
 
 pub trait Fmt {
-    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, 
+              args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>;
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+    fn size_hint(&self) -> usize {
         0
     }
 }
@@ -147,32 +150,62 @@ pub trait FormatTable {
     fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         for piece in pieces.iter() {
-            if let Piece::Placeholder(name, _, _) = piece {
-                if !self.has_fmt(name) {
-                    return Err(FormattingError::UnknownFmt(name.clone()))
-                }
-            }
+            self.validate_piece(piece)?;
         }
         let total_len = pieces.iter().fold(0, |total, piece| {
             match piece {
                 Piece::Literal(s) => total + s.len(),
-                Piece::Placeholder(name, flags, opts) => {
+                Piece::Placeholder(name, ..) => {
                     let f = self.get_fmt(name).unwrap();
-                    total + f.size_hint(flags, opts)
+                    total + f.size_hint()
                 }
             }
         });
         let mut res = String::with_capacity(total_len);
         for piece in pieces.iter() {
-            match piece {
-                Piece::Literal(s) => res.push_str(s),
-                Piece::Placeholder(name, flags, opts) => {
-                    let f = self.get_fmt(name).unwrap();
-                    res.push_str(&f.format(flags, opts)?);
+            res.push_str(&self.provide_info(piece)?);
+        }
+        Ok(res)
+    }
+
+    fn validate_piece(&self, piece: &Piece) -> Result<(), FormattingError> {
+        match piece {
+            Piece::Literal(_) => Ok(()),
+            Piece::Placeholder(name, args, _, opts) => {
+                if !self.has_fmt(&name) {
+                    return Err(FormattingError::UnknownFmt(name.clone()));
+                }
+                for arg in args.iter() {
+                    self.validate_piece(arg)?;
+                }
+                for opt in opts.values() {
+                    self.validate_piece(opt)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn provide_info(&self, piece: &Piece) -> Result<String, FormattingError> {
+        match piece {
+            Piece::Literal(s) => Ok(s.clone()),
+            Piece::Placeholder(name, args, flags, opts) => {
+                match self.get_fmt(&name) {
+                    Some(fmt) => {
+                        let mut string_args = Vec::new();
+                        for arg in args.iter() {
+                            string_args.push(self.provide_info(arg)?);
+                        }
+                        let mut string_opts = HashMap::new();
+                        for (key, value) in opts.iter() {
+                            string_opts.insert(key.clone(), self.provide_info(value)?);
+                        }
+                        Ok(fmt.format(&string_args, &flags, &string_opts)?)
+                    },
+                    None => Err(FormattingError::UnknownFmt(name.clone()))
                 }
             }
         }
-        Ok(res)
     }
 }
 
@@ -190,11 +223,12 @@ pub enum SingleFmtError {
 #[derive(Debug, PartialEq)]
 pub enum FormattingError {
     // Parsing errors.
-    UnbalancedBrackets(),
-    NestedFmts(),
-    MissingOpeningBracket(),
-    MissingFmtName(),
-    MissingOptionName(),
+    EmptyName(String),
+    ArgumentListOrFieldSeparatorExpected(String),
+    UnterminatedArgumentList(String),
+    FieldSeparatorExpectedToStartFlags(String),
+    FieldSeparatorExpectedToStartOptions(String),
+    UnterminatedPlaceholder(String),
     // Errors from single Fmts.
     UnknownFlag(char),
     UnknownOption(String),
@@ -217,11 +251,17 @@ impl From<SingleFmtError> for FormattingError {
 impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
         match err {
-            ParseError::UnbalancedBrackets() => FormattingError::UnbalancedBrackets(),
-            ParseError::NestedPlaceholders() => FormattingError::NestedFmts(),
-            ParseError::MissingOpeningBracket() => FormattingError::MissingOpeningBracket(),
-            ParseError::MissingPlaceholderName() => FormattingError::MissingFmtName(),
-            ParseError::MissingOptionName() => FormattingError::MissingOptionName()
+            ParseError::EmptyName(s) => FormattingError::EmptyName(s),
+            ParseError::ArgumentListOrFieldSeparatorExpected(s) =>
+                FormattingError::ArgumentListOrFieldSeparatorExpected(s),
+            ParseError::UnterminatedArgumentList(s) =>
+                FormattingError::UnterminatedArgumentList(s),
+            ParseError::FieldSeparatorExpectedToStartFlags(s) =>
+                FormattingError::FieldSeparatorExpectedToStartFlags(s),
+            ParseError::FieldSeparatorExpectedToStartOptions(s) =>
+                FormattingError::FieldSeparatorExpectedToStartOptions(s),
+            ParseError::UnterminatedPlaceholder(s) =>
+                FormattingError::UnterminatedPlaceholder(s)
         }
     }
 }
@@ -265,7 +305,7 @@ impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
 /// * `Y`, which changes the output to Y/N.
 /// Common options are recognised.
 impl Fmt for bool {
-    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut res = if *self {
@@ -288,7 +328,7 @@ impl Fmt for bool {
             util::apply_common_options(&mut res, options)?;
             Ok(res)
         }
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+    fn size_hint(&self) -> usize {
         5
     }
 }
@@ -296,14 +336,14 @@ impl Fmt for bool {
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for char {
-    fn format(&self, _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.to_string();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize
+    fn size_hint(&self) -> usize
     {
         1
     }
@@ -315,6 +355,7 @@ impl Fmt for char {
 /// notation.
 /// Common options are recognised.
 /// Common numeric options are also recognised.
+/*
 impl Fmt for f32 {
     fn format(&self, flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
@@ -330,18 +371,19 @@ impl Fmt for f32 {
         20
     }
 }
+*/
 
 /// This instance has no special flags.
 /// Common options are recognised.
 impl<'a> Fmt for &'a str {
-    fn format(&self, _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.to_string();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+    fn size_hint(&self) -> usize {
         self.len()
     }
 }
@@ -349,25 +391,25 @@ impl<'a> Fmt for &'a str {
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for String {
-    fn format(&self, _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.clone();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize {
+    fn size_hint(&self) -> usize {
         self.len()
     }
 }
 
 impl Fmt for i32 {
-    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], _flags: &[char], _options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             Ok(self.to_string())
         }
-    fn size_hint(&self, flags: &[char], options: &HashMap<String, String>) -> usize {
+    fn size_hint(&self) -> usize {
         12
     }
 }
