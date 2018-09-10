@@ -416,6 +416,7 @@ impl Fmt for i32 {
 
 /* ---------- tests ---------- */
 
+/*
 #[cfg(test)]
 mod tests {
     test_suite! {
@@ -476,6 +477,7 @@ mod tests {
 
     }
 
+    /*
     test_suite! {
         name floats;
         use std::collections::HashMap;
@@ -491,6 +493,7 @@ mod tests {
         }
 
     }
+    */
 
     test_suite! {
         name common_options;
@@ -541,3 +544,4 @@ mod tests {
     }
 
 }
+*/
