@@ -1,212 +1,234 @@
 use std::collections::HashMap;
 
-/// Errors that occur during parsing a format string.
-#[derive(Debug, PartialEq)]
-pub enum ParseError {
-    UnbalancedBrackets(),
-    NestedPlaceholders(),
-    MissingOpeningBracket(),
-    MissingPlaceholderName(),
-    MissingOptionName()
-}
-
 const ESCAPE: char = '\\';
 const SETOPT: char = '=';
 const FIELD_SEPARATOR: char = ':';
+const OPENING_BRACKET: char = '{';
+const CLOSING_BRACKET: char = '}';
+const MAX_RECURSION_DEPTH: u8 = 100;
 
 /// Either a literal string, or a placecholder.
 #[derive(Debug, PartialEq)]
 pub enum Piece {
     Literal(String),
-    Placeholder(String, Vec<char>, HashMap<String, String>)
+    Placeholder(String, Vec<Piece>, Vec<char>, HashMap<String, Piece>)
+}
+
+/// Errors that occur during parsing a format string.
+#[derive(Debug, PartialEq)]
+pub enum ParseError {
+    EmptyName(String),
+    UnbalancedBrackets(String),
+    ArgumentListOrFieldSeparatorExpected(String),
+    UnterminatedArgumentList(String),
+    FieldSeparatorExpectedToStartFlags(String),
+    FieldSeparatorExpectedToStartOptions(String),
+    MissingOptionName(String),
+    UnterminatedPlaceholder(String)
 }
 
 pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
-    let mut pieces = Vec::new();
-    validate_brackets(input)?;
-    let mut start = 0;
-    let mut is_placeholder = false;
+    let mut input = input;
+    let mut res = Vec::new();
+    while !input.is_empty() {
+        let (piece, rest) = parse_piece(input, 0)?;
+        res.push(piece);
+    }
+    Ok(res)
+}
+
+fn parse_piece(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
+    let mut iter = input.chars();
+    match iter.next() {
+        Some(OPENING_BRACKET) => parse_placeholder(&input[1..], recursion_depth),
+        _ => parse_literal(input)
+    }
+}
+
+fn parse_literal(input: &str) -> Result<(Piece, &str), ParseError> {
+    let mut prev = None;
+    let mut literal = String::new();
+    for (i, ch) in input.char_indices() {
+        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
+            return Ok((Piece::Literal(literal), &input[i..]));
+        }
+        if ch == OPENING_BRACKET && prev != Some(ESCAPE) {
+            return Ok((Piece::Literal(literal), &input[i..]));
+        }
+        if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
+            return Ok((Piece::Literal(literal), &input[i..]));
+        }
+        if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET || ch == CLOSING_BRACKET {
+            literal.push(ch);
+        } else if ch == ESCAPE && prev == Some(ESCAPE) {
+            literal.push(ch);
+            prev = None;
+        } else {
+            literal.push(ch);
+            prev = Some(ch);
+        }
+    }
+    Ok((Piece::Literal(literal), ""))
+}
+
+fn parse_placeholder(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
+    let first_input = input;
+    let (name, input) = extract_name(first_input, input)?;
+    let (arguments, input) = extract_arguments(first_input, input, recursion_depth)?;
+    let (flags, input) = extract_flags(first_input, input)?;
+    let (options, input) = extract_options(first_input, input, recursion_depth)?;
+    let input = extract_placeholder_terminator(first_input, input)?;
+    Ok((Piece::Placeholder(name, arguments, flags, options), input))
+}
+
+fn extract_name<'a, 'b>(first_input: &'a str, input: &'b str) 
+    -> Result<(String, &'b str), ParseError>
+{
+    let mut name = String::new();
     let mut prev = None;
     for (i, ch) in input.char_indices() {
-        if !is_placeholder && ch == '{' && prev != Some(ESCAPE) {
-            add_literal(&mut pieces, input, start, i);
-            is_placeholder = true;
-            start = i + 1;
+        if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET {
+            if prev == Some(ESCAPE) {
+                name.push(ch);
+            } else {
+                return Ok((trim_name(input, &name)?, &input[i..]));
+            }
+        } else if ch == ESCAPE && prev == Some(ESCAPE) {
+            name.push(ESCAPE);
+            prev = None;
+        } else {
             prev = Some(ch);
+        }
+    }
+    Ok((trim_name(input, &name)?, ""))
+}
+
+fn extract_arguments<'a, 'b>(first_input: &'a str, input: &'b str, recursion_depth: u8) 
+    -> Result<(Vec<Piece>, &'b str), ParseError>
+{
+    let mut iter = input.char_indices();
+    match iter.next() {
+        Some((_, OPENING_BRACKET)) => (),
+        Some((_, FIELD_SEPARATOR)) => return Ok((Vec::new(), input)),
+        None => return Ok((Vec::new(), input)),
+        Some(_) => return Err(ParseError::ArgumentListOrFieldSeparatorExpected(
+                first_input.to_string()))
+    }
+    let mut input = input;
+    let mut args = Vec::new();
+    while input.chars().next() != Some(CLOSING_BRACKET) {
+        let (piece, rest) = parse_piece(input, recursion_depth + 1)?;
+        args.push(piece);
+        input = rest;
+        if input.is_empty() {
+            return Err(ParseError::UnterminatedArgumentList(first_input.to_string()));
+        }
+    }
+    Ok((args, &input[1..]))
+}
+
+fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str) 
+    -> Result<(Vec<char>, &'b str), ParseError>
+{
+    let mut iter = input.char_indices();
+    match iter.next() {
+        Some((_, FIELD_SEPARATOR)) => (),
+        None => return Ok((Vec::new(), "")),
+        _ => return Err(ParseError::FieldSeparatorExpectedToStartFlags(full_input.to_string()))
+    }
+    let mut flags = Vec::new();
+    let prev = None;
+    for (i, ch) in iter {
+        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
+            return Ok((flags, &input[i..]));
+        }
+        if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
+            flags.push(ch);
+        }
+        if ch == ESCAPE && prev == Some(ESCAPE) {
+            flags.push(ch);
+            prev = None;
             continue;
         }
-        if !is_placeholder && ch == '}' && prev != Some(ESCAPE) {
-            return Err(ParseError::MissingOpeningBracket());
-        }
-        if !is_placeholder {
-            prev = Some(ch);
-            continue;
-        }
-        if ch == '{' && prev != Some(ESCAPE) {
-            return Err(ParseError::NestedPlaceholders());
-        }
-        if ch == '}' && prev != Some(ESCAPE) {
-            add_placeholder(&mut pieces, input, start, i)?;
-            is_placeholder = false;
-            start = i + 1;
-            prev = Some(ch);
-            continue;
+        if ch != ESCAPE {
+            flags.push(ch);
         }
         prev = Some(ch);
     }
-    if is_placeholder && prev == Some('}') {
-        add_placeholder(&mut pieces, input, start, input.len())?;
-    } else {
-        add_literal(&mut pieces, input, start, input.len());
-    }
-    Ok(pieces)
-}
-
-fn add_literal(pieces: &mut Vec<Piece>, input: &str, start: usize, end: usize) {
-    if start >= end {
-        return;
-    }
-    let mut s = String::with_capacity(end - start);
-    let mut prev = None;
-    let sub = &input[start..end];
-    for ch in sub.chars() {
-        if prev == Some(ESCAPE) {
-            if ch == '{' {
-                s.push('{');
-                prev = Some(ch);
-            } else if ch == '}' {
-                s.push('}');
-                prev = Some(ch);
-            } else if ch == ESCAPE {
-                s.push(ESCAPE);
-                prev = None;
-            }
-        } else {
-            if ch == ESCAPE {
-                prev = Some(ch);
-                continue;
-            }
-            s.push(ch);
-            prev = Some(ch);
-        }
-    }
     if prev == Some(ESCAPE) {
-        s.push(ESCAPE);
+        flags.push(ESCAPE);
     }
-    pieces.push(Piece::Literal(s));
+    Ok((flags, ""))
 }
 
-fn add_placeholder(pieces: &mut Vec<Piece>, input: &str, start: usize, end: usize)
-    -> Result<(), ParseError>
+fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth: u8) 
+    -> Result<(HashMap<String, Piece>, &'b str), ParseError>
 {
-    let sub = &input[start..end];
-    let (name, sub) = extract_name(sub)?;
-    let (flags, sub) = extract_flags(sub)?;
-    let options = extract_options(sub)?;
-    pieces.push(Piece::Placeholder(name, flags, options));
-    Ok(())
-}
-
-fn extract_name(input: &str) -> Result<(String, &str), ParseError> {
-    if input.len() == 0 {
-        return Err(ParseError::MissingPlaceholderName());
+    let mut iter = input.char_indices();
+    match iter.next() {
+        Some((_, FIELD_SEPARATOR)) => (),
+        None => return Ok((HashMap::new(), "")),
+        _ => return Err(ParseError::FieldSeparatorExpectedToStartOptions(full_input.to_string()))
     }
-    for (i, ch) in input.char_indices() {
-        if ch == ':' {
-            let name = String::from(&input[0..i]);
-            let rest = &input[i + 1 .. input.len()];
-            return Ok((name, rest))
-        }
-    }
-    Ok((String::from(input.trim()), &input[input.len()..]))
-}
-
-fn extract_flags(input: &str) -> Result<(Vec<char>, &str), ParseError> {
-    if input.len() == 0 {
-        return Ok((Vec::new(), input))
-    }
-    let mut flags = Vec::new();
-    for (i, ch) in input.char_indices() {
-        if ch == ':' {
-            let rest = &input[i + 1 .. input.len()];
-            return Ok((flags, rest))
-        }
-        if ch.is_whitespace() {
-            continue;
-        }
-        flags.push(ch);
-    }
-    Ok((flags, &input[input.len()..]))
-}
-
-fn extract_options(input: &str) -> Result<HashMap<String, String>, ParseError> {
-    if input.len() == 0 {
-        return Ok(HashMap::new());
-    }
-    let mut options = HashMap::new();
-    let mut name_start = Some(0);
-    let mut name_end = None;
-    let mut value_start = None;
-    for (i, ch) in input.char_indices() {
-        if name_start.is_none() && ch == SETOPT {
-            return Err(ParseError::MissingOptionName());
-        }
-        if name_start.is_none() {
-            name_start = Some(i);
-            name_end = None;
-            continue;
-        }
-        if name_start.is_some() && name_end.is_none() {
-            if ch == SETOPT {
-                name_end = Some(i);
-                value_start = Some(i + 1);
-                continue;
-            }
-            continue;
-        }
-        if value_start.is_none() {
-            value_start = Some(i);
-            continue;
-        }
-        if ch == FIELD_SEPARATOR {
-            let name = String::from(input[name_start.unwrap() .. name_end.unwrap()].trim());
-            if name.is_empty() {
-                return Err(ParseError::MissingOptionName());
-            }
-            let value = String::from(input[value_start.unwrap() .. i].trim());
-            options.insert(name, value);
-            name_start = None;
-            name_end = None;
-            value_start = None;
-        }
-    }
-    if name_start.is_some() && value_start.is_some() {
-        let name = String::from(input[name_start.unwrap() .. name_end.unwrap()].trim());
-        let value = String::from(input[value_start.unwrap() .. input.len()].trim());
-        options.insert(name, value);
-    }
-    Ok(options)
-}
-
-fn validate_brackets(input: &str) -> Result<(), ParseError> {
-    let mut balance = 0;
+    let mut res: HashMap<String, Piece> = HashMap::new();
     let mut prev = None;
-    for c in input.chars() {
-        if c == '{' && prev != Some(ESCAPE) {
-            balance += 1;
+    let mut name = String::new();
+    let mut input = input;
+    loop {
+        let maybe_next = iter.next();
+        if maybe_next.is_none() {
+            break;
         }
-        if c == '}' && prev != Some(ESCAPE) {
-            balance -= 1;
+        let (i, ch) = maybe_next.unwrap();
+        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
+            let name = trim_name(input, &name)?;
+            res.insert(name, Piece::Literal("".to_string()));
+        } else if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
+            name.push(ch);
+            prev = Some(ch);
+        } else if ch == SETOPT && prev == Some(ESCAPE) {
+            name.push(ch);
+            prev = Some(ch);
+        } else if ch == ESCAPE && prev == Some(ESCAPE) {
+            name.push(ch);
+            prev = None;
+        } else if ch != SETOPT {
+            name.push(ch);
+            prev = Some(ch);
+        } else { // Is an unescaped SETOPT.
+            let name = trim_name(full_input, &name)?;
+            let (piece, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1)?;
+            res.insert(name, piece);
+            input = rest;
+            name = String::new();
+            prev = None;
+            iter = input.char_indices();
         }
-        prev = Some(c)
     }
-    if balance == 0 {
-        Ok(())
-    } else {
-        Err(ParseError::UnbalancedBrackets())
+    if !name.is_empty() {
+        res.insert(name, Piece::Literal("".to_string()));
+    }
+    Ok((res, input))
+}
+
+fn extract_placeholder_terminator<'a, 'b>(full_input: &'a str, input: &'b str) 
+    -> Result<&'b str, ParseError>
+{
+    match input.chars().next() {
+        Some(CLOSING_BRACKET) => Ok(&input[1..]),
+        _ => Err(ParseError::UnterminatedPlaceholder(full_input.to_string()))
     }
 }
 
+fn trim_name(global_source: &str, name: &str) -> Result<String, ParseError> {
+    let res = name.trim().to_string();
+    if res.is_empty() {
+        Err(ParseError::EmptyName(global_source.to_string()))
+    } else {
+        Ok(res)
+    }
+}
+                    
 #[cfg(test)]
 mod tests {
     test_suite! {
