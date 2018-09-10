@@ -18,12 +18,10 @@ pub enum Piece {
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     EmptyName(String),
-    UnbalancedBrackets(String),
     ArgumentListOrFieldSeparatorExpected(String),
     UnterminatedArgumentList(String),
     FieldSeparatorExpectedToStartFlags(String),
     FieldSeparatorExpectedToStartOptions(String),
-    MissingOptionName(String),
     UnterminatedPlaceholder(String)
 }
 
@@ -291,12 +289,6 @@ mod tests {
             assert_that!(&res.len(), eq(1));
             let lit = &res[0];
             assert_that!(lit, has_structure!(Piece::Literal [eq(escaped.clone())]));
-        }
-
-        test unbalanced_brackets() {
-            let s = String::from("{{}");
-            let res = parse(&s);
-            assert_that!(&res, has_structure!(Err [eq(ParseError::UnbalancedBrackets())]));
         }
 
         test nested_placeholders() {
