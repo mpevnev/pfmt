@@ -1,50 +1,9 @@
 /*! 
  * # Overview
- * This library provides a powerful and simple way to format your data. At the
- * core of it lie two traits: `Fmt`, which describes a formattable field, and
- * `FormatTable`, which is a collection of `Fmt`s. At the moment, `FormatTable`
- * is implemented for `HashMap`s with keys of `String` and values of `Fmt`
- * (which allows to keep any kind of `Fmt` to be kept in it, but required some
- * explicit type annotations to help out the compiler) and for `Vec`s of
- * `Fmt`s.
- *
- * One you have a format table of your choice, the only thing you need to do is
- * to 
- *
- * `let maybe_string = format_table.format("see Syntax section");`
- *
- * If you feel confident that an error is not possible (say, the format string
- * is hard-coded, as in example above, but see 'Errors' section below), just
- * `.unwrap()` the `Result` you've got.
- *
- * Note that unlike with `format!`, the format strings is not required to be
- * static. Non-static strings just carry a bit more risk of producing an error.
- *
- * # Format string syntax
- * Format strings are strings with some placeholders embedded in them. A
- * placeholder is a request for a format table to find a named `Fmt` and use
- * it here, applying flags and options from that placeholder. A placeholder
- * looks like this:
- *
- * `"{name or (for `Vec` tables) index:flags:option1=value:option2=value...}"`
- *
- * A placeholder is surrounded by "`{}`" (and if you need them in the
- * non-placeholder parts of your string, escape them with a "`\`"), and must
- * have a name. The rest (starting with the first `:`, is optional). Flags are
- * the part between the first and the second colons, and must be specified if
- * you want to use options, which come later and are separated by colons. Each
- * options takes the form "`name = value`", where both trailing and leading
- * whitespace will be stripped from the name and the value. An empty name is an
- * error. An empty value is not. Colons are not allowed at the moment in either
- * names or values. There can be as many options as you want.
- *
- * Currently, "`{`" and "`}`" are not allowed in placeholder parts, either
- * escaped or not. This will be, eventually, lifted.
  *
  * # Examples
  * Let's start with something boring:
  * ```
- * extern crate pfmt;
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
  *
@@ -58,20 +17,19 @@
  * ```
  * I can do that with `format!` too. Let's see:
  * ```
- * extern crate pfmt;
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
  *
  * let input = "a_really_long_string";
  * let mut table: HashMap<String, &Fmt> = HashMap::new();
  * table.insert("s".to_string(), &input);
- * let s = table.format("fixed width: {s::truncate=r5}").unwrap();
+ * // (note an escaped colon)
+ * let s = table.format("fixed width\\: {s::truncate=r5}").unwrap();
  * assert!(s == "fixed width: a_rea");
  * ```
  * Can't decide if you want your booleans as "true"/"false", or "yes"/"no"?
  * Easy:
  * ```
- * extern crate pfmt;
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
  *
@@ -224,10 +182,7 @@ pub enum SingleFmtError {
 pub enum FormattingError {
     // Parsing errors.
     EmptyName(String),
-    ArgumentListOrFieldSeparatorExpected(String),
     UnterminatedArgumentList(String),
-    FieldSeparatorExpectedToStartFlags(String),
-    FieldSeparatorExpectedToStartOptions(String),
     UnterminatedPlaceholder(String),
     // Errors from single Fmts.
     UnknownFlag(char),
@@ -252,14 +207,8 @@ impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
         match err {
             ParseError::EmptyName(s) => FormattingError::EmptyName(s),
-            ParseError::ArgumentListOrFieldSeparatorExpected(s) =>
-                FormattingError::ArgumentListOrFieldSeparatorExpected(s),
             ParseError::UnterminatedArgumentList(s) =>
                 FormattingError::UnterminatedArgumentList(s),
-            ParseError::FieldSeparatorExpectedToStartFlags(s) =>
-                FormattingError::FieldSeparatorExpectedToStartFlags(s),
-            ParseError::FieldSeparatorExpectedToStartOptions(s) =>
-                FormattingError::FieldSeparatorExpectedToStartOptions(s),
             ParseError::UnterminatedPlaceholder(s) =>
                 FormattingError::UnterminatedPlaceholder(s)
         }

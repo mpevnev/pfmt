@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::iter::repeat;
 use std::string::ToString;
 
-use num;
+//use num;
 
 use {SingleFmtError, SingleFmtError::*};
 
@@ -97,6 +97,8 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
 
 /* ---------- numerical formatting ---------- */
 
+/*
+ 
 pub fn float_to_string<T>(f: T, exp: bool, options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
     where T: num::Float + num::FromPrimitive + ToString
@@ -145,3 +147,5 @@ pub fn apply_common_numeric_options(s: &mut String,
     }
     Ok(())
 }
+
+*/
