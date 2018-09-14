@@ -103,67 +103,45 @@ pub trait Fmt {
 
 pub trait FormatTable {
     fn get_fmt(&self, name: &str) -> Option<&Fmt>;
-    fn has_fmt(&self, name: &str) -> bool;
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>>;
 
     fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
+        let mut res = String::new();
         for piece in pieces.iter() {
-            self.validate_piece(piece)?;
-        }
-        let total_len = pieces.iter().fold(0, |total, piece| {
-            match piece {
-                Piece::Literal(s) => total + s.len(),
-                Piece::Placeholder(name, ..) => {
-                    let f = self.get_fmt(name).unwrap();
-                    total + f.size_hint()
-                }
-            }
-        });
-        let mut res = String::with_capacity(total_len);
-        for piece in pieces.iter() {
-            res.push_str(&self.provide_info(piece)?);
+            res.push_str(&self.format_one(piece)?);
         }
         Ok(res)
     }
 
-    fn validate_piece(&self, piece: &Piece) -> Result<(), FormattingError> {
+    fn format_one(&self, piece: &Piece) -> Result<String, FormattingError> {
         match piece {
-            Piece::Literal(_) => Ok(()),
-            Piece::Placeholder(name, args, _, opts) => {
-                if !self.has_fmt(&name) {
-                    return Err(FormattingError::UnknownFmt(name.clone()));
+            Piece::Literal(s) => Ok(s.clone()),
+            Piece::Placeholder(name, args, flags, opts) => {
+                if let Some(fmt) = self.get_fmt(&name) {
+                    self.format_unwrapped(fmt, args, flags, opts)
+                } else if let Some(fmtbox) = self.produce_fmt(&name) {
+                    self.format_unwrapped(fmtbox.borrow(), args, flags, opts)
+                } else {
+                    Err(FormattingError::UnknownFmt(name.clone()))
                 }
-                for arg in args.iter() {
-                    self.validate_piece(arg)?;
-                }
-                for opt in opts.values() {
-                    self.validate_piece(opt)?;
-                }
-                Ok(())
             }
         }
     }
 
-    fn provide_info(&self, piece: &Piece) -> Result<String, FormattingError> {
-        match piece {
-            Piece::Literal(s) => Ok(s.clone()),
-            Piece::Placeholder(name, args, flags, opts) => {
-                match self.get_fmt(&name) {
-                    Some(fmt) => {
-                        let mut string_args = Vec::new();
-                        for arg in args.iter() {
-                            string_args.push(self.provide_info(arg)?);
-                        }
-                        let mut string_opts = HashMap::new();
-                        for (key, value) in opts.iter() {
-                            string_opts.insert(key.clone(), self.provide_info(value)?);
-                        }
-                        Ok(fmt.format(&string_args, &flags, &string_opts)?)
-                    },
-                    None => Err(FormattingError::UnknownFmt(name.clone()))
-                }
-            }
+    fn format_unwrapped(&self, fmt: &Fmt, args: &[Piece], flags: &[char],
+                        opts: &HashMap<String, Piece>)
+        -> Result<String, FormattingError>
+    {
+        let mut string_args = Vec::new();
+        for arg in args.iter() {
+            string_args.push(self.format_one(arg)?);
         }
+        let mut string_opts = HashMap::new();
+        for (key, value) in opts.iter() {
+            string_opts.insert(key.clone(), self.format_one(value)?);
+        }
+        Ok(fmt.format(&string_args, &flags, &string_opts)?)
     }
 }
 
@@ -221,8 +199,8 @@ impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
     fn get_fmt(&self, name: &str) -> Option<&Fmt> {
         self.get(name).map(|r| r.borrow())
     }
-    fn has_fmt(&self, name: &str) -> bool {
-        self.contains_key(name)
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        None
     }
 }
 
@@ -230,8 +208,8 @@ impl<'a, B: Borrow<Fmt>> FormatTable for HashMap<&'a str, B> {
     fn get_fmt(&self, name: &str) -> Option<&Fmt> {
         self.get(name).map(|r| r.borrow())
     }
-    fn has_fmt(&self, name: &str) -> bool {
-        self.contains_key(name)
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        None
     }
 }
 
@@ -247,12 +225,8 @@ impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
             None
         }
     }
-    fn has_fmt(&self, name: &str) -> bool {
-        if let Ok(index) = name.parse::<usize>() {
-            index < self.len()
-        } else {
-            false
-        }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        None
     }
 }
 
