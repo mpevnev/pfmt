@@ -238,13 +238,19 @@ impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
     }
 }
 
-/*
 impl<A, B> FormatTable for (A, B) 
     where A: FormatTable,
           B: FormatTable
 {
-
-*/
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        self.0.produce_fmt(name)
+            .or_else(|| self.1.produce_fmt(name))
+    }
+}
 
 /* ---------- implementations of Fmt for standard types ---------- */
 
