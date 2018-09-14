@@ -226,6 +226,15 @@ impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
     }
 }
 
+impl<'a, B: Borrow<Fmt>> FormatTable for HashMap<&'a str, B> {
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.get(name).map(|r| r.borrow())
+    }
+    fn has_fmt(&self, name: &str) -> bool {
+        self.contains_key(name)
+    }
+}
+
 impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
     fn get_fmt(&self, name: &str) -> Option<&Fmt> {
         if let Ok(index) = name.parse::<usize>() {
