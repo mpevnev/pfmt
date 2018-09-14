@@ -19,8 +19,6 @@ pub enum Piece {
 pub enum ParseError {
     EmptyName(String),
     UnterminatedArgumentList(String),
-    FieldSeparatorExpectedToStartFlags(String),
-    FieldSeparatorExpectedToStartOptions(String),
     UnterminatedPlaceholder(String)
 }
 
@@ -148,12 +146,12 @@ fn extract_arguments<'a, 'b>(first_input: &'a str, input: &'b str, recursion_dep
 fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str) 
     -> Result<(Vec<char>, &'b str), ParseError>
 {
-    let mut iter = input.char_indices();
-    match iter.next() {
-        Some((_, FIELD_SEPARATOR)) => (),
+    let mut iter = input.char_indices().peekable();
+    match iter.peek() {
+        Some((_, FIELD_SEPARATOR)) => { iter.next(); },
         Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
+        Some(_) => (),
         None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
-        _ => return Err(ParseError::FieldSeparatorExpectedToStartFlags(full_input.to_string()))
     }
     let mut flags = Vec::new();
     let mut prev = None;
@@ -196,42 +194,42 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
     let mut prev = None;
     let mut name = String::new();
     let mut input = input;
+    let mut end = 0;
     loop {
         let maybe_next = iter.next();
         if maybe_next.is_none() {
             break;
         }
         let (i, ch) = maybe_next.unwrap();
-        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
-            name = trim_name(input, &name)?;
-            res.insert(name, Piece::Literal("".to_string()));
+        end = i;
+        if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
+            break;
+        } else if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
+            input = &input[1..];
             name = String::new();
-        } else if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
-            name.push(ch);
-            prev = Some(ch);
-        } else if ch == SETOPT && prev == Some(ESCAPE) {
-            name.push(ch);
-            prev = Some(ch);
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            name.push(ch);
-            prev = None;
-        } else if ch != SETOPT {
-            name.push(ch);
-            prev = Some(ch);
-        } else { // Is an unescaped SETOPT.
+            continue;
+        } else if ch == SETOPT && prev != Some(ESCAPE) {
             name = trim_name(full_input, &name)?;
-            let (piece, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1, false)?;
-            res.insert(name, piece);
+            let (opt, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1, false)?;
+            res.insert(name, opt);
+            iter = rest.char_indices();
             input = rest;
             name = String::new();
+            continue;
+        } else if ch == ESCAPE && prev == Some(ESCAPE) {
+            name.push(ESCAPE);
             prev = None;
-            iter = input.char_indices();
+        } else if ch != ESCAPE {
+            name.push(ch);
+            prev = Some(ch);
+        }  else {
+            name.push(ch);
         }
     }
     if !name.is_empty() {
         res.insert(name, Piece::Literal("".to_string()));
     }
-    Ok((res, input))
+    Ok((res, &input[end..]))
 }
 
 fn extract_placeholder_terminator<'a, 'b>(full_input: &'a str, input: &'b str) 
@@ -405,12 +403,6 @@ mod tests {
             assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
         }
 
-        test no_field_separator_to_start_flags() {
-            let s = "{foobar{asdf}a}";
-            let err = parse(&s).expect_err("Parse succeeded");
-            assert_that!(&err, eq(FieldSeparatorExpectedToStartFlags(s.to_string())));
-        }
-
         test unterminated_flags() {
             let s = "{foobar:asdf";
             let err = parse(&s).expect_err("Parse succeeded");
@@ -446,7 +438,7 @@ mod tests {
                             )));
         }
 
-        test double_literal_argument() {
+        test two_literals() {
             let s = "{foobar{a:b}}";
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
@@ -471,6 +463,27 @@ mod tests {
                             Vec::new(),
                             HashMap::new()
                         )));
+        }
+
+        test full_literal() {
+            let s = "{foobar{{baz{arg}flags:opt=1}}}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            if let Placeholder(_, args, _, _) = piece {
+                assert_that!(&args.len(), eq(1));
+                assert_that!(&args[0], eq(Placeholder("baz".to_string(),
+                                            vec![Literal("arg".to_string())],
+                                            vec!['f', 'l', 'a', 'g', 's'],
+                                            {
+                                                let mut m = HashMap::new();
+                                                let lit = Literal("1".to_string());
+                                                m.insert("opt".to_string(), lit);
+                                                m
+                                            })));
+            } else {
+                panic!("Not a placeholder: {:?}", piece);
+            }
         }
 
     }
