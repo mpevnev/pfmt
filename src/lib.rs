@@ -374,7 +374,6 @@ impl Fmt for i32 {
 
 /* ---------- tests ---------- */
 
-/*
 #[cfg(test)]
 mod tests {
     test_suite! {
@@ -384,17 +383,17 @@ mod tests {
         use {FormatTable, Fmt, FormattingError};
 
         test unknown_fmt() {
-            let table: HashMap<String, &Fmt> = HashMap::new();
+            let table: HashMap<&str, &Fmt> = HashMap::new();
             let s = table.format("i = {i}");
-            assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i".to_string().clone()))));
+            assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i".to_string()))));
         }
 
         test integers_simple_1() {
             let i = 1;
             let j = 23;
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("i".to_string(), &i);
-            table.insert("j".to_string(), &j);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            table.insert("j", &j);
             let s = table.format("i = {i}, j = {j}").unwrap();
             assert_that!(&s.as_str(), eq("i = 1, j = 23"));
         }
@@ -410,9 +409,9 @@ mod tests {
         test flags() {
             let a = true;
             let b = false;
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("a".to_string(), &a);
-            table.insert("b".to_string(), &b);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("a", &a);
+            table.insert("b", &b);
             let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
             assert_that!(&s.as_str(), eq("true, no, N"));
         }
@@ -427,8 +426,8 @@ mod tests {
 
         test boring() {
             let c = 'z';
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("c".to_string(), &c);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("c", &c);
             let s = table.format("{c}, {c::width=l5}!").unwrap();
             assert_that!(&s.as_str(), eq("z, z    !"));
         }
@@ -460,41 +459,41 @@ mod tests {
         use {FormatTable, Fmt, FormattingError};
 
         test width_left() {
-            let string = "foobar".to_string();
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("s".to_string(), &string);
+            let string = "foobar";
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("s", &string);
             let s = table.format("{s::width=l10}").unwrap();
             assert_that!(&s.as_str(), eq("foobar    "));
         }
 
         test width_right() {
             let string = "foobar";
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("s".to_string(), &string);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("s", &string);
             let s = table.format("{s::width=r10}").unwrap();
             assert_that!(&s.as_str(), eq("    foobar"));
         }
 
         test width_center() {
             let string = "foobar";
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("s".to_string(), &string);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("s", &string);
             let s = table.format("{s::width=c10}").unwrap();
             assert_that!(&s.as_str(), eq("  foobar  "));
         }
 
         test truncate_left() {
             let string = "1234567890";
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("s".to_string(), &string);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("s", &string);
             let s = table.format("{s::truncate=l5}").unwrap();
             assert_that!(&s.as_str(), eq("67890"));
         }
         
         test truncate_right() {
             let string = "1234567890";
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
-            table.insert("s".to_string(), &string);
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("s", &string);
             let s = table.format("{s::truncate=r5}").unwrap();
             assert_that!(&s.as_str(), eq("12345"));
         }
@@ -502,4 +501,3 @@ mod tests {
     }
 
 }
-*/
