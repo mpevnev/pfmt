@@ -100,46 +100,48 @@ pub trait Fmt {
 
 pub trait FormatTable {
     fn get_fmt(&self, name: &str) -> Option<&Fmt>;
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>>;
+    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
+        None
+    }
 
-    fn format<'a>(&'a self, input: &'a str) -> Result<String, FormattingError> {
+    fn format(&self, input: &str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         let mut res = String::new();
         for piece in pieces.iter() {
-            res.push_str(&self.format_one(piece)?);
+            res.push_str(&format_one(&self, piece)?);
         }
         Ok(res)
     }
+}
 
-    fn format_one(&self, piece: &Piece) -> Result<String, FormattingError> {
-        match piece {
-            Piece::Literal(s) => Ok(s.clone()),
-            Piece::Placeholder(name, args, flags, opts) => {
-                if let Some(fmt) = self.get_fmt(&name) {
-                    self.format_unwrapped(fmt, args, flags, opts)
-                } else if let Some(fmtbox) = self.produce_fmt(&name) {
-                    self.format_unwrapped(fmtbox.borrow(), args, flags, opts)
-                } else {
-                    Err(FormattingError::UnknownFmt(name.clone()))
-                }
+fn format_one<T: FormatTable>(table: &T, piece: &Piece) -> Result<String, FormattingError> {
+    match piece {
+        Piece::Literal(s) => Ok(s.clone()),
+        Piece::Placeholder(name, args, flags, opts) => {
+            if let Some(fmt) = table.get_fmt(&name) {
+                format_unwrapped(table, fmt, args, flags, opts)
+            } else if let Some(fmtbox) = table.produce_fmt(&name) {
+                format_unwrapped(table, fmtbox.borrow(), args, flags, opts)
+            } else {
+                Err(FormattingError::UnknownFmt(name.clone()))
             }
         }
     }
+}
 
-    fn format_unwrapped(&self, fmt: &Fmt, args: &[Piece], flags: &[char],
-                        opts: &HashMap<String, Piece>)
-        -> Result<String, FormattingError>
-    {
-        let mut string_args = Vec::new();
-        for arg in args.iter() {
-            string_args.push(self.format_one(arg)?);
-        }
-        let mut string_opts = HashMap::new();
-        for (key, value) in opts.iter() {
-            string_opts.insert(key.clone(), self.format_one(value)?);
-        }
-        Ok(fmt.format(&string_args, &flags, &string_opts)?)
+fn format_unwrapped<T: FormatTable>(table: &T, fmt: &Fmt, args: &[Piece], flags: &[char],
+                    opts: &HashMap<String, Piece>)
+    -> Result<String, FormattingError>
+{
+    let mut string_args = Vec::new();
+    for arg in args.iter() {
+        string_args.push(format_one(table, arg)?);
     }
+    let mut string_opts = HashMap::new();
+    for (key, value) in opts.iter() {
+        string_opts.insert(key.clone(), format_one(table, value)?);
+    }
+    Ok(fmt.format(&string_args, &flags, &string_opts)?)
 }
 
 /* ---------- errors ---------- */
@@ -192,11 +194,20 @@ impl From<ParseError> for FormattingError {
 
 /* ---------- implementations of FormatTable for standard types ---------- */
 
+impl<'a, T: FormatTable + ?Sized> FormatTable for &'a T {
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        (*self).get_fmt(name)
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        (*self).produce_fmt(name)
+    }
+}
+
 impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
     fn get_fmt(&self, name: &str) -> Option<&Fmt> {
         self.get(name).map(|r| r.borrow())
     }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
         None
     }
 }
@@ -205,7 +216,7 @@ impl<'a, B: Borrow<Fmt>> FormatTable for HashMap<&'a str, B> {
     fn get_fmt(&self, name: &str) -> Option<&Fmt> {
         self.get(name).map(|r| r.borrow())
     }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
         None
     }
 }
@@ -222,10 +233,18 @@ impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
             None
         }
     }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
         None
     }
 }
+
+/*
+impl<A, B> FormatTable for (A, B) 
+    where A: FormatTable,
+          B: FormatTable
+{
+
+*/
 
 /* ---------- implementations of Fmt for standard types ---------- */
 
