@@ -252,6 +252,92 @@ impl<A, B> FormatTable for (A, B)
     }
 }
 
+impl<A, B, C> FormatTable for (A, B, C)
+    where A: FormatTable,
+          B: FormatTable,
+          C: FormatTable
+{
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
+            .or_else(|| self.2.get_fmt(name))
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        self.0.produce_fmt(name)
+            .or_else(|| self.1.produce_fmt(name))
+            .or_else(|| self.2.produce_fmt(name))
+    }
+}
+
+impl<A, B, C, D> FormatTable for (A, B, C, D)
+    where A: FormatTable,
+          B: FormatTable,
+          C: FormatTable,
+          D: FormatTable
+{
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
+            .or_else(|| self.2.get_fmt(name))
+            .or_else(|| self.3.get_fmt(name))
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        self.0.produce_fmt(name)
+            .or_else(|| self.1.produce_fmt(name))
+            .or_else(|| self.2.produce_fmt(name))
+            .or_else(|| self.3.produce_fmt(name))
+    }
+}
+
+impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
+    where A: FormatTable,
+          B: FormatTable,
+          C: FormatTable,
+          D: FormatTable,
+          E: FormatTable
+{
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
+            .or_else(|| self.2.get_fmt(name))
+            .or_else(|| self.3.get_fmt(name))
+            .or_else(|| self.4.get_fmt(name))
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        self.0.produce_fmt(name)
+            .or_else(|| self.1.produce_fmt(name))
+            .or_else(|| self.2.produce_fmt(name))
+            .or_else(|| self.3.produce_fmt(name))
+            .or_else(|| self.4.produce_fmt(name))
+    }
+}
+
+impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
+    where A: FormatTable,
+          B: FormatTable,
+          C: FormatTable,
+          D: FormatTable,
+          E: FormatTable,
+          F: FormatTable
+{
+    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
+            .or_else(|| self.2.get_fmt(name))
+            .or_else(|| self.3.get_fmt(name))
+            .or_else(|| self.4.get_fmt(name))
+            .or_else(|| self.5.get_fmt(name))
+    }
+    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+        self.0.produce_fmt(name)
+            .or_else(|| self.1.produce_fmt(name))
+            .or_else(|| self.2.produce_fmt(name))
+            .or_else(|| self.3.produce_fmt(name))
+            .or_else(|| self.4.produce_fmt(name))
+            .or_else(|| self.5.produce_fmt(name))
+    }
+}
+
 /* ---------- implementations of Fmt for standard types ---------- */
 
 /// This instance is aware of the following flags:
