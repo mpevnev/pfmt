@@ -18,7 +18,6 @@ pub enum Piece {
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     EmptyName(String),
-    ArgumentListOrFieldSeparatorExpected(String),
     UnterminatedArgumentList(String),
     FieldSeparatorExpectedToStartFlags(String),
     FieldSeparatorExpectedToStartOptions(String),
@@ -29,25 +28,34 @@ pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
     let mut input = input;
     let mut res = Vec::new();
     while !input.is_empty() {
-        let (piece, rest) = parse_piece(input, 0)?;
+        let (piece, rest) = parse_piece(input, 0, false)?;
         input = rest;
         res.push(piece);
     }
     Ok(res)
 }
 
-fn parse_piece(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
+fn parse_piece(input: &str, recursion_depth: u8, new_arglist: bool) 
+    -> Result<(Piece, &str), ParseError> 
+{
     let mut iter = input.chars();
     match iter.next() {
         Some(OPENING_BRACKET) => parse_placeholder(input, recursion_depth),
-        _ => parse_literal(input)
+        _ => parse_literal(input, new_arglist)
     }
 }
 
-fn parse_literal(input: &str) -> Result<(Piece, &str), ParseError> {
+fn parse_literal(input: &str, new_arglist: bool) -> Result<(Piece, &str), ParseError> {
     let mut prev = None;
     let mut literal = String::new();
     for (i, ch) in input.char_indices() {
+        if i == 0 && ch == FIELD_SEPARATOR {
+            if new_arglist {
+                return Ok((Piece::Literal(literal), input));
+            } else {
+                continue;
+            }
+        }
         if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
             return Ok((Piece::Literal(literal), &input[i..]));
         }
@@ -70,7 +78,9 @@ fn parse_literal(input: &str) -> Result<(Piece, &str), ParseError> {
     Ok((Piece::Literal(literal), ""))
 }
 
-fn parse_placeholder(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
+fn parse_placeholder(input: &str, recursion_depth: u8) 
+    -> Result<(Piece, &str), ParseError> 
+{
     if recursion_depth > MAX_RECURSION_DEPTH {
         return grab_until_terminator(input);
     }
@@ -118,14 +128,14 @@ fn extract_arguments<'a, 'b>(first_input: &'a str, input: &'b str, recursion_dep
         Some((_, OPENING_BRACKET)) => (),
         Some((_, FIELD_SEPARATOR)) => return Ok((Vec::new(), input)),
         Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
-        Some(_) => return Err(ParseError::ArgumentListOrFieldSeparatorExpected(
-                first_input.to_string())),
-        None => return Err(ParseError::UnterminatedPlaceholder(first_input.to_string()))
+        _ => panic!("Somehow dead code in 'extract_arguments' was reached on input: '{}'", input),
     }
-    let mut input = input;
+    let mut input = &input[1..];
     let mut args = Vec::new();
+    let mut first = true;
     while input.chars().next() != Some(CLOSING_BRACKET) {
-        let (piece, rest) = parse_piece(input, recursion_depth + 1)?;
+        let (piece, rest) = parse_piece(input, recursion_depth + 1, first)?;
+        first = false;
         args.push(piece);
         input = rest;
         if input.is_empty() {
@@ -142,7 +152,7 @@ fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str)
     match iter.next() {
         Some((_, FIELD_SEPARATOR)) => (),
         Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
-        None => return Ok((Vec::new(), "")),
+        None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
         _ => return Err(ParseError::FieldSeparatorExpectedToStartFlags(full_input.to_string()))
     }
     let mut flags = Vec::new();
@@ -150,24 +160,26 @@ fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str)
     for (i, ch) in iter {
         if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
             return Ok((flags, &input[i..]));
-        }
-        if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
+        } else if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
             flags.push(ch);
-        }
-        if ch == ESCAPE && prev == Some(ESCAPE) {
+            prev = Some(ch);
+        } else if ch == ESCAPE && prev == Some(ESCAPE) {
             flags.push(ch);
             prev = None;
-            continue;
-        }
-        if ch != ESCAPE {
+        } else if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
+            return Ok((flags, &input[i..]));
+        } else if ch != ESCAPE {
             flags.push(ch);
+            prev = Some(ch);
+        } else {
+            prev = Some(ch);
         }
-        prev = Some(ch);
     }
-    if prev == Some(ESCAPE) {
-        flags.push(ESCAPE);
+    if prev != Some(CLOSING_BRACKET) {
+        Err(ParseError::UnterminatedPlaceholder(full_input.to_string()))
+    } else {
+        Ok((flags, ""))
     }
-    Ok((flags, ""))
 }
 
 fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth: u8) 
@@ -177,8 +189,8 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
     match iter.next() {
         Some((_, FIELD_SEPARATOR)) => (),
         Some((_, CLOSING_BRACKET)) => return Ok((HashMap::new(), input)),
-        None => return Ok((HashMap::new(), "")),
-        _ => return Err(ParseError::FieldSeparatorExpectedToStartOptions(full_input.to_string()))
+        None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
+        _ => panic!("Reached dead code in 'extract_options' on input '{}'", full_input)
     }
     let mut res: HashMap<String, Piece> = HashMap::new();
     let mut prev = None;
@@ -208,7 +220,7 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
             prev = Some(ch);
         } else { // Is an unescaped SETOPT.
             name = trim_name(full_input, &name)?;
-            let (piece, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1)?;
+            let (piece, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1, false)?;
             res.insert(name, piece);
             input = rest;
             name = String::new();
@@ -270,10 +282,8 @@ fn trim_name(global_source: &str, name: &str) -> Result<String, ParseError> {
 #[cfg(test)]
 mod tests {
     test_suite! {
-        name parsing_tests;
-
+        name basic_tests;
         use std::collections::HashMap;
-
         use galvanic_assert::matchers::*;
 
         use parse::*;
@@ -304,6 +314,163 @@ mod tests {
                                             eq(Vec::new()),
                                             eq(HashMap::new())
             ]));
+        }
+
+        test single_placeholder_2() {
+            let s = "a{b}";
+            let pieces = parse(&s).expect("Failed to get any pieces");
+            assert_that!(&pieces.len(), eq(2));
+            let a = &pieces[0];
+            let b = &pieces[1];
+            assert_that!(&a, eq(Literal("a".to_string())));
+            assert_that!(&b, has_structure!(Placeholder [
+                                            eq("b".to_string()),
+                                            eq(Vec::new()),
+                                            eq(Vec::new()),
+                                            eq(HashMap::new())
+            ]));
+        }
+
+        test several_placeholders() {
+            let s = "a{b}c{d}";
+            let pieces = parse(&s).expect("Failed to get any pieces");
+            assert_that!(&pieces.len(), eq(4));
+            let a = &pieces[0];
+            let b = &pieces[1];
+            let c = &pieces[2];
+            let d = &pieces[3];
+            assert_that!(&a, eq(Literal("a".to_string())));
+            assert_that!(&b, has_structure!(Placeholder [
+                                            eq("b".to_string()),
+                                            eq(Vec::new()),
+                                            eq(Vec::new()),
+                                            eq(HashMap::new())
+            ]));
+            assert_that!(&c, eq(Literal("c".to_string())));
+            assert_that!(&d, has_structure!(Placeholder [
+                                            eq("d".to_string()),
+                                            eq(Vec::new()),
+                                            eq(Vec::new()),
+                                            eq(HashMap::new())
+            ]));
+        }
+
+        test explicit_separator_before_literal() {
+            let s = "{foobar}:asdf";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(2));
+            let pl = &pieces[0];
+            assert_that!(&pl,
+                         eq(Placeholder("foobar".to_string(),
+                         Vec::new(),
+                         Vec::new(),
+                         HashMap::new()
+                         )));
+            let lit = &pieces[1];
+            assert_that!(&lit, eq(Literal("asdf".to_string())));
+        }
+
+    }
+
+    test_suite! {
+        name errors;
+        use galvanic_assert::matchers::*;
+
+        use parse::*;
+        use parse::ParseError::*;
+
+        test unterminated_name() {
+            let s = "12{asdf";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, has_structure!(
+                    UnterminatedPlaceholder [eq("{asdf".to_string())]
+                    ));
+        }
+
+        test unterminated_arguments_list() {
+            let s = "12{asdf{qq";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(UnterminatedArgumentList("{asdf{qq".to_string())));
+        }
+
+        test unterminated_argument() {
+            let s = "12{asdf{{a";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(UnterminatedPlaceholder("{a".to_string())));
+        }
+
+        test no_closing_bracket_after_arguments() {
+            let s = "{foobar{asdf}";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        }
+
+        test no_field_separator_to_start_flags() {
+            let s = "{foobar{asdf}a}";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(FieldSeparatorExpectedToStartFlags(s.to_string())));
+        }
+
+        test unterminated_flags() {
+            let s = "{foobar:asdf";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        }
+
+        test unterminated_options() {
+            let s= "{foobar::";
+            let err = parse(&s).expect_err("Parse succeeded");
+            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        }
+
+    }
+
+    test_suite! {
+        name arguments;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+
+        use parse::*;
+        use Piece::*;
+
+        test single_argument() {
+            let s = "{foobar{asdf}}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece,
+                         eq(Placeholder("foobar".to_string(),
+                            vec![Literal("asdf".to_string())],
+                            Vec::new(),
+                            HashMap::new()
+                            )));
+        }
+
+        test double_literal_argument() {
+            let s = "{foobar{a:b}}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece,
+                         eq(Placeholder("foobar".to_string(),
+                         vec![Literal("a".to_string()), Literal("b".to_string())],
+                         Vec::new(),
+                         HashMap::new()
+                         )));
+        }
+
+        test empty_arguments() {
+            let s = "{foobar{::}}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece,
+                         eq(Placeholder("foobar".to_string(),
+                            vec![Literal("".to_string()), Literal("".to_string()),
+                                Literal("".to_string())],
+                            Vec::new(),
+                            HashMap::new()
+                        )));
         }
 
     }
