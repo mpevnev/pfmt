@@ -434,10 +434,10 @@ impl Fmt for i32 {
         }
 }
 
-/* ---------- tests ---------- */
+/* ---------- tests for Fmts ---------- */
 
 #[cfg(test)]
-mod tests {
+mod fmt_tests {
     test_suite! {
         name general;
         use std::collections::HashMap;
@@ -558,6 +558,64 @@ mod tests {
             table.insert("s", &string);
             let s = table.format("{s::truncate=r5}").unwrap();
             assert_that!(&s.as_str(), eq("12345"));
+        }
+
+    }
+
+}
+
+/* ---------- tests for FormatTables ---------- */
+
+#[cfg(test)]
+mod table_tests {
+    test_suite! {
+        name vec;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt, FormattingError};
+
+        test unknown_fmt_1() {
+            let i = 1;
+            let j = 2;
+            let table: Vec<&Fmt> = vec![&i, &j];
+            let err = table.format("{10}").expect_err("Unexpectedly found a fmt");
+            assert_that!(&err, eq(FormattingError::UnknownFmt("10".to_string())));
+        }
+
+        test unknown_fmt_2() {
+            let i = 1;
+            let j = 2;
+            let table: Vec<&Fmt> = vec![&i, &j];
+            let err = table.format("{-3}").expect_err("Unexpectedly found a fmt");
+            assert_that!(&err, eq(FormattingError::UnknownFmt("-3".to_string())));
+        }
+
+        test boring() {
+            let i = 1;
+            let j = 2;
+            let table: Vec<&Fmt> = vec![&i, &j];
+            let s = table.format("{0}, {1}").expect("Failed to format");
+            assert_that!(&s, eq("1, 2".to_string()));
+        }
+
+    }
+
+    test_suite! {
+        name tuples;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt, FormattingError};
+
+        test defaulting() {
+            let a: Vec<Box<Fmt>> = vec![Box::new(-1), Box::new(-2)];
+            let b: Vec<Box<Fmt>> = (0..10_i32).map(|i| Box::new(i) as Box<Fmt>).collect();
+            let s = (a, b).format("{5}").expect("Failed");
+            assert_that!(&s, eq("5".to_string()));
+        }
+
+        test precedence() {
+            let a: Vec<Box<Fmt>> = vec![Box::new(1)];
+            let b: Vec<Box<Fmt>> = vec![Box::new(10)];
+            let s = (a, b).format("{0}").expect("Failed");
+            assert_that!(&s, eq("1".to_string()));
         }
 
     }
