@@ -65,11 +65,14 @@ fn parse_literal(input: &str, new_arglist: bool) -> Result<(Piece, &str), ParseE
         }
         if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET || ch == CLOSING_BRACKET {
             literal.push(ch);
+            prev = Some(ch);
         } else if ch == ESCAPE && prev == Some(ESCAPE) {
             literal.push(ch);
             prev = None;
-        } else {
+        } else if ch != ESCAPE {
             literal.push(ch);
+            prev = Some(ch);
+        } else {
             prev = Some(ch);
         }
     }
@@ -366,6 +369,14 @@ mod tests {
                          )));
             let lit = &pieces[1];
             assert_that!(&lit, eq(Literal("asdf".to_string())));
+        }
+
+        test escapes_in_literals() {
+            let s = "a\\:b\\{c\\}d\\\\";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece, eq(Literal("a:b{c}d\\".to_string())));
         }
 
     }
