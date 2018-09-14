@@ -96,9 +96,6 @@ pub trait Fmt {
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>;
-    fn size_hint(&self) -> usize {
-        0
-    }
 }
 
 pub trait FormatTable {
@@ -260,9 +257,6 @@ impl Fmt for bool {
             util::apply_common_options(&mut res, options)?;
             Ok(res)
         }
-    fn size_hint(&self) -> usize {
-        5
-    }
 }
 
 /// This instance has no special flags.
@@ -275,10 +269,6 @@ impl Fmt for char {
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self) -> usize
-    {
-        1
-    }
 }
 
 /// This instance is aware of the following flags:
@@ -298,10 +288,6 @@ impl Fmt for f32 {
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self, _flags: &[char], _options: &HashMap<String, String>) -> usize
-    {
-        20
-    }
 }
 */
 
@@ -315,9 +301,6 @@ impl<'a> Fmt for &'a str {
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self) -> usize {
-        self.len()
-    }
 }
 
 /// This instance has no special flags.
@@ -330,9 +313,6 @@ impl Fmt for String {
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
-    fn size_hint(&self) -> usize {
-        self.len()
-    }
 }
 
 impl Fmt for i32 {
@@ -341,9 +321,6 @@ impl Fmt for i32 {
         {
             Ok(self.to_string())
         }
-    fn size_hint(&self) -> usize {
-        12
-    }
 }
 
 /* ---------- tests ---------- */
