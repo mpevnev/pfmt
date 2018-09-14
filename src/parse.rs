@@ -222,11 +222,11 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
         } else if ch == ESCAPE && prev == Some(ESCAPE) {
             name.push(ESCAPE);
             prev = None;
-        } else if ch != ESCAPE {
-            name.push(ch);
+        } else if ch == ESCAPE && prev != Some(ESCAPE) {
             prev = Some(ch);
         }  else {
             name.push(ch);
+            prev = Some(ch);
         }
     }
     if !name.is_empty() {
@@ -379,6 +379,34 @@ mod tests {
             assert_that!(&piece, eq(Literal("a:b{c}d\\".to_string())));
         }
 
+        test escapes_in_placeholder_names() {
+            let s = "{fo\\:ob\\\\ar\\{\\}}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece, eq(Placeholder("fo:ob\\ar{}".to_string(),
+                                                Vec::new(),
+                                                Vec::new(),
+                                                HashMap::new())));
+        }
+
+        test escapes_in_option_names() {
+            let s = "{foobar::o\\:p\\{\\}t\\\\ion=1}";
+            let pieces = parse(&s).expect("Failed to parse");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece, eq(Placeholder("foobar".to_string(),
+                                                Vec::new(),
+                                                Vec::new(),
+                                                {
+                                                    let mut m = HashMap::new();
+                                                    let s = "o:p{}t\\ion".to_string();
+                                                    let lit = Literal("1".to_string());
+                                                    m.insert(s, lit);
+                                                    m
+                                                })));
+        }
+                                                
     }
 
     test_suite! {
