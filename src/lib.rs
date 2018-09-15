@@ -861,6 +861,30 @@ mod fmt_tests {
             assert_that!(&s.as_str(), eq("1240, 1200"));
         }
 
+        test rounding_for_negatives() {
+            let i = -1235;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i::prec=-1}, {i::prec=-2}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("-1240, -1200"));
+        }
+
+        test rounding_in_different_bases() {
+            let o = 0o124;
+            let b = 0b1101;
+            let x = 0x1a2;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("o", &o);
+            table.insert("b", &b);
+            table.insert("x", &x);
+            let s1 = table.format("{o:op:prec=-1}, {o:op:prec=-2}").expect("Failed to parse 1");
+            let s2 = table.format("{b:bp:prec=-1}, {b:bp:prec=-2}").expect("Failed to parse 2");
+            let s3 = table.format("{x:xp:prec=-1}, {x:xp:prec=-2}").expect("Failed to parse 3");
+            assert_that!(&s1.as_str(), eq("0o130, 0o100"));
+            assert_that!(&s2.as_str(), eq("0b1110, 0b1100"));
+            assert_that!(&s3.as_str(), eq("0x1a0, 0x200"));
+        }
+
     }
 
     test_suite! {
