@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::iter::repeat;
+use std::iter::{repeat};
 use std::string::ToString;
 
-//use num;
+use num;
 
 use {SingleFmtError, SingleFmtError::*};
 
 /* ---------- general formatting options ---------- */
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Justification {
     Left(),
     Center(),
@@ -97,55 +98,102 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
 
 /* ---------- numerical formatting ---------- */
 
-/*
- 
-pub fn float_to_string<T>(f: T, exp: bool, options: &HashMap<String, String>)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Rounding {
+    Down(),
+    Nearest(),
+    Up()
+}
+
+pub fn float_to_exp<T>(f: T, options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
-    where T: num::Float + num::FromPrimitive + ToString
+    where T: num::Float + num::FromPrimitive + Copy + ToString
 {
-    let precision = {
-        if let Some(s) = options.get("prec") {
-            match s.parse::<i32>() {
-                Ok(i) => Some(i),
-                Err(_) => return Err(SingleFmtError::InvalidOptionValue(
-                    "prec".to_string(),
-                    s.to_string()))
-            }
+    if f.is_nan() || f.is_infinite() {
+        return Ok(f.to_string())
+    }
+    let mut abs = f.abs();
+    let ten = T::from_i32(10).unwrap();
+    let mut p = 0;
+    while abs < T::one() || abs >= ten {
+        if abs < T::one() {
+            p -= 1;
+            abs = abs * ten;
         } else {
-            None
+            p += 1;
+            abs = abs / ten;
         }
-    };
-    if exp {
-        match precision {
-            Some(p) if p <= 0 => {
-            },
-            Some(_p) => {
-                Ok("".to_string())
-            },
-            None => {
-                Ok("".to_string())
-            }
+    }
+    if let Some(prec) = get_precision(options)? {
+        let mult = ten.powi(prec + p);
+        abs = abs * mult;
+        abs = match get_rounding(options)? {
+            Some(Rounding::Up()) => abs.ceil(),
+            Some(Rounding::Down()) => abs.floor(),
+            Some(Rounding::Nearest()) | None => abs.round()
+        };
+        abs = abs / mult;
+    }
+    let abs = abs.to_string();
+    let power = p.to_string();
+    let mut res = String::with_capacity(abs.len() + power.len() + 2);
+    res += &abs; 
+    res += "e";
+    res += &power;
+    Ok(res)
+}
+
+pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
+    -> Result<String, SingleFmtError> 
+    where T: num::Float + num::FromPrimitive + Copy + ToString
+{
+    if f.is_nan() || f.is_infinite() {
+        return Ok(f.to_string());
+    }
+    let mut f = f;
+    if let Some(prec) = get_precision(options)? {
+        let mult = T::from_i32(10).unwrap().powi(prec);
+        f = f * mult;
+        f = match get_rounding(options)? {
+            Some(Rounding::Up()) => f.ceil(),
+            Some(Rounding::Down()) => f.floor(),
+            Some(Rounding::Nearest()) | None => f.round()
+        };
+        f = f / mult;
+    }
+    Ok(f.to_string())
+}
+
+/* ---------- helpers ---------- */
+
+fn get_precision(options: &HashMap<String, String>)
+    -> Result<Option<i32>, SingleFmtError>
+{
+    if let Some(s) = options.get("prec") {
+        if let Ok(i) = s.parse::<i32>() {
+            Ok(Some(i))
+        } else {
+            Err(InvalidOptionValue("prec".to_string(), s.to_string()))
+        } 
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_rounding(options: &HashMap<String, String>)
+    -> Result<Option<Rounding>, SingleFmtError>
+{
+    if let Some(s) = options.get("round") {
+        if s == "up" {
+            Ok(Some(Rounding::Up()))
+        } else if s == "down" {
+            Ok(Some(Rounding::Down()))
+        } else if s == "nearest" {
+            Ok(Some(Rounding::Nearest()))
+        } else {
+            Err(InvalidOptionValue("round".to_string(), s.to_string()))
         }
     } else {
-        Ok("".to_string())
+        Ok(None)
     }
 }
-
-pub fn apply_common_numeric_options(s: &mut String, 
-                                    flags: &[char],
-                                    _options: &HashMap<String, String>)
-    -> Result<(), SingleFmtError>
-{
-    if s.is_empty() {
-        return Ok(());
-    }
-    if flags.contains(&'+') && s.chars().nth(0).unwrap() != '-' {
-        let mut new_s = String::with_capacity(1 + s.len());
-        new_s.push('+');
-        new_s += s;
-        *s = new_s;
-    }
-    Ok(())
-}
-
-*/
