@@ -1,1 +1,1 @@
-Please see the crate's documentation as crates.io.
+Please see the crate's documentation at crates.io.
