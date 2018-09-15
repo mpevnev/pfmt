@@ -164,28 +164,32 @@ pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
     Ok(f.to_string())
 }
 
-pub fn signed_int_to_str<T>(i: T, flags: &[char], _options: &HashMap<String, String>)
+pub fn int_to_str<T>(i: T, flags: &[char], _options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::ToPrimitive 
-            + num::Signed + ToString + Copy
+    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + ToString + Copy
 {
-    let mut s;
     let prefix = flags.contains(&'p');
     if flags.contains(&'b') {
-        s = present_binary(i.abs(), prefix);
+        Ok(present_binary(i, prefix))
     } else if flags.contains(&'o') {
-        s = present_octal(i.abs(), prefix);
+        Ok(present_octal(i, prefix))
     } else if flags.contains(&'x') {
-        s = present_hexadecimal(i.abs(), prefix);
+        Ok(present_hexadecimal(i, prefix))
     } else {
-        s = i.abs().to_string();
+        Ok(i.to_string())
     }
-    if i < T::zero() {
+}
+
+pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char]) 
+    -> Result<(), SingleFmtError>
+    where T: num::Signed
+{
+    if signed.is_negative() {
         s.insert(0, '-');
     } else if flags.contains(&'+') {
         s.insert(0, '+');
     }
-    Ok(s)
+    Ok(())
 }
 
 /* ---------- helpers ---------- */

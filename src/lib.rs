@@ -398,9 +398,7 @@ impl Fmt for f32 {
             } else {
                 res = util::float_to_normal(*self, options)?;
             }
-            if *self >= 0.0 && flags.contains(&'+') {
-                res.insert(0, '+');
-            }
+            util::add_sign(&mut res, *self, flags)?;
             util::apply_common_options(&mut res, options)?;
             Ok(res)
         }
@@ -421,9 +419,7 @@ impl Fmt for f64 {
             } else {
                 res = util::float_to_normal(*self, options)?;
             }
-            if *self >= 0.0 && flags.contains(&'+') {
-                res.insert(0, '+');
-            }
+            util::add_sign(&mut res, *self, flags)?;
             util::apply_common_options(&mut res, options)?;
             Ok(res)
         }
@@ -441,7 +437,8 @@ impl Fmt for i8 {
     fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
-            let mut s = util::signed_int_to_str(*self, flags, options)?;
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
