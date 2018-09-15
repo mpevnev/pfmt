@@ -150,7 +150,7 @@ pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
     if f.is_nan() || f.is_infinite() {
         return Ok(f.to_string());
     }
-    let mut f = f;
+    let mut f = f.abs();
     if let Some(prec) = get_precision(options)? {
         let mult = T::from_i32(10).unwrap().powi(prec);
         f = f * mult;
