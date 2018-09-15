@@ -209,6 +209,7 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
             break;
         } else if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
             input = &input[1..];
+            iter = input.char_indices();
             name = String::new();
             continue;
         } else if ch == SETOPT && prev != Some(ESCAPE) {
@@ -405,6 +406,24 @@ mod tests {
                                                     m.insert(s, lit);
                                                     m
                                                 })));
+        }
+
+        test multiple_options() {
+            let s = "{foobar::a=a:b=b}";
+            let pieces = parse(&s).expect("Parse failed");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(piece, eq(Placeholder("foobar".to_string(),
+                                    Vec::new(),
+                                    Vec::new(),
+                                    {
+                                        let mut m = HashMap::new();
+                                        let a = Literal("a".to_string());
+                                        let b = Literal("b".to_string());
+                                        m.insert("a".to_string(), a);
+                                        m.insert("b".to_string(), b);
+                                        m
+                                    })));
         }
                                                 
     }
