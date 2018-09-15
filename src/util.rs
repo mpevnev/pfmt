@@ -212,11 +212,11 @@ fn present_binary<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
-    let mut i = i;
+    let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let two = T::from_i32(2).unwrap();
     apply_integer_rounding(&mut i, two, options)?;
     let mut chars = Vec::new();
-    while i > T::zero() {
+    while i != T::zero() {
         let ch = ((i % two).to_u8().unwrap() + '0' as u8) as char;
         chars.push(ch);
         i = i / two;
@@ -233,10 +233,10 @@ fn present_octal<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
     let mut chars = Vec::new();
-    let mut i = i;
+    let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let eight = T::from_i32(8).unwrap();
     apply_integer_rounding(&mut i, eight, options)?;
-    while i > T::zero() {
+    while i != T::zero() {
         let ch = ((i % eight).to_u8().unwrap() + '0' as u8) as char;
         chars.push(ch);
         i = i / eight;
@@ -253,7 +253,7 @@ fn present_hexadecimal<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
     let mut chars = Vec::new();
-    let mut i = i;
+    let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let hex = T::from_i32(16).unwrap();
     apply_integer_rounding(&mut i, hex, options)?;
     while i > T::zero() {
@@ -277,14 +277,10 @@ fn present_decimal<T>(i: T, options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy
 {
-    let mut i = i;
+    let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let ten = T::from_i32(10).unwrap();
     apply_integer_rounding(&mut i, ten, options)?;
-    let mut res = i.to_string();
-    if i < T::zero() {
-        res = res[1..].to_string();
-    }
-    Ok(res)
+    Ok(i.to_string())
 }
 
 fn get_rounding(options: &HashMap<String, String>)

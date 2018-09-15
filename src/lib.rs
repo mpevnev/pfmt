@@ -429,7 +429,7 @@ impl Fmt for f64 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -448,7 +448,7 @@ impl Fmt for i8 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -467,7 +467,7 @@ impl Fmt for i16 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -486,7 +486,7 @@ impl Fmt for i32 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -505,7 +505,7 @@ impl Fmt for i64 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -524,7 +524,7 @@ impl Fmt for i128 {
 /// * `+`, which forces display of the sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
@@ -567,7 +567,7 @@ impl Fmt for String {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -588,7 +588,7 @@ impl Fmt for u8 {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -609,7 +609,7 @@ impl Fmt for u16 {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -630,7 +630,7 @@ impl Fmt for u32 {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -651,7 +651,7 @@ impl Fmt for u64 {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -672,7 +672,7 @@ impl Fmt for u128 {
 /// * `+`, which add a leading plus sign;
 /// * `b`, which makes the output binary;
 /// * `o`, which makes the output octal;
-/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
@@ -829,7 +829,7 @@ mod fmt_tests {
             assert_that!(&s.as_str(), eq("10"));
         }
 
-        test different_radices() {
+        test different_bases() {
             let i = 11;
             let mut table: HashMap<&str, &Fmt> = HashMap::new();
             table.insert("i", &i);
@@ -837,12 +837,20 @@ mod fmt_tests {
             assert_that!(&s.as_str(), eq("1011, 13, b"));
         }
 
-        test radix_prefixes() {
+        test base_prefixes() {
             let i = 1;
             let mut table: HashMap<&str, &Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i:bp}, {i:op}, {i:xp}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0b1, 0o1, 0x1"));
+        }
+
+        test bases_for_negative_numbers() {
+            let i = -11;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i:b}, {i:o}, {i:x}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("-1011, -13, -b"));
         }
 
     }
