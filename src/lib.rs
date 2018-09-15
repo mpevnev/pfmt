@@ -388,19 +388,64 @@ impl Fmt for char {
 /// notation.
 /// Common options are recognised.
 /// Common numeric options are also recognised.
-/*
 impl Fmt for f32 {
-    fn format(&self, flags: &[char], options: &HashMap<String, String>)
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
-            let exp = flags.contains(&'e');
-            let mut s = util::float_to_string(*self, exp, options)?;
-            util::apply_common_numeric_options(&mut s, flags, options)?;
+            let mut res: String;
+            if flags.contains(&'e') {
+                res = util::float_to_exp(*self, options)?;
+            } else {
+                res = util::float_to_normal(*self, options)?;
+            }
+            if *self >= 0.0 && flags.contains(&'+') {
+                res.insert(0, '+');
+            }
+            util::apply_common_options(&mut res, options)?;
+            Ok(res)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `e`, which changes the output to scientific format.
+/// Common options are recognized.
+/// Common numeric options are also recognized.
+impl Fmt for f64 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut res: String;
+            if flags.contains(&'e') {
+                res = util::float_to_exp(*self, options)?;
+            } else {
+                res = util::float_to_normal(*self, options)?;
+            }
+            if *self >= 0.0 && flags.contains(&'+') {
+                res.insert(0, '+');
+            }
+            util::apply_common_options(&mut res, options)?;
+            Ok(res)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for i8 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::signed_int_to_str(*self, flags, options)?;
             util::apply_common_options(&mut s, options)?;
             Ok(s)
         }
 }
-*/
 
 /// This instance has no special flags.
 /// Common options are recognised.
@@ -496,23 +541,69 @@ mod fmt_tests {
 
     }
 
-    /*
     test_suite! {
         name floats;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
         use {FormatTable, Fmt, FormattingError};
 
-        test exp_boring_1() {
-            let f: f32 = 1_000_000.0;
+        test exp_precision_neg() {
+            let f: f32 = 1_234_567.891;
             let mut table: HashMap<String, &Fmt> = HashMap::new();
             table.insert("f".to_string(), &f);
-            let s = table.format("{f:e+:prec=-1}").unwrap();
-            assert_that!(&s.as_str(), eq("+1e6"));
+            let s = table.format("{f:e+:prec=-1}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("+1.23457e6"));
+        }
+
+        test exp_precision_pos() {
+            let f: f32 = 1000.123;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f:e:prec=2}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1.00012e3"));
+        }
+
+        test exp_negative_power() {
+            let f: f32 = 0.0625;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f:e}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("6.25e-2"));
+        }
+
+        test norm_rounding_up() {
+            let f = 0.2;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f::round=up:prec=0}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1"));
+        }
+
+        test norm_rounding_down() {
+            let f = 0.8;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f::round=down:prec=0}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("0"));
+        }
+
+        test norm_rounding_usual() {
+            let f = 0.5;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f::round=nearest:prec=0}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1"));
+        }
+
+        test negative() {
+            let f = -1.0;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("-1"));
         }
 
     }
-    */
 
     test_suite! {
         name common_options;

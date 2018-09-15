@@ -164,6 +164,30 @@ pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
     Ok(f.to_string())
 }
 
+pub fn signed_int_to_str<T>(i: T, flags: &[char], _options: &HashMap<String, String>)
+    -> Result<String, SingleFmtError>
+    where T: num::Integer + num::FromPrimitive + num::ToPrimitive 
+            + num::Signed + ToString + Copy
+{
+    let mut s;
+    let prefix = flags.contains(&'p');
+    if flags.contains(&'b') {
+        s = present_binary(i.abs(), prefix);
+    } else if flags.contains(&'o') {
+        s = present_octal(i.abs(), prefix);
+    } else if flags.contains(&'x') {
+        s = present_hexadecimal(i.abs(), prefix);
+    } else {
+        s = i.abs().to_string();
+    }
+    if i < T::zero() {
+        s.insert(0, '-');
+    } else if flags.contains(&'+') {
+        s.insert(0, '+');
+    }
+    Ok(s)
+}
+
 /* ---------- helpers ---------- */
 
 fn get_precision(options: &HashMap<String, String>)
@@ -178,6 +202,65 @@ fn get_precision(options: &HashMap<String, String>)
     } else {
         Ok(None)
     }
+}
+
+fn present_binary<T>(i: T, prefix: bool) -> String
+    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+{
+    let mut chars = Vec::new();
+    let mut i = i;
+    let two = T::from_i32(2).unwrap();
+    while i > T::zero() {
+        let ch = ((i % two).to_u8().unwrap() + '0' as u8) as char;
+        chars.push(ch);
+        i = i / two;
+    }
+    if prefix {
+        chars.push('b');
+        chars.push('0');
+    }
+    chars.iter().rev().collect()
+}
+
+fn present_octal<T>(i: T, prefix: bool) -> String
+    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+{
+    let mut chars = Vec::new();
+    let mut i = i;
+    let eight = T::from_i32(8).unwrap();
+    while i > T::zero() {
+        let ch = ((i % eight).to_u8().unwrap() + '0' as u8) as char;
+        chars.push(ch);
+        i = i / eight;
+    }
+    if prefix {
+        chars.push('o');
+        chars.push('0');
+    }
+    chars.iter().rev().collect()
+}
+
+fn present_hexadecimal<T>(i: T, prefix: bool) -> String
+    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+{
+    let mut chars = Vec::new();
+    let mut i = i;
+    let hex = T::from_i32(16).unwrap();
+    while i > T::zero() {
+        let index = (i % hex).to_u8().unwrap();
+        let ch = if index < 10 {
+            (index + '0' as u8) as char
+        } else {
+            (index + 'a' as u8) as char
+        };
+        chars.push(ch);
+        i = i / hex;
+    }
+    if prefix {
+        chars.push('x');
+        chars.push('0');
+    }
+    chars.iter().rev().collect()
 }
 
 fn get_rounding(options: &HashMap<String, String>)
