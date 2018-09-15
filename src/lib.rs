@@ -1,5 +1,43 @@
 /*! 
  * # Overview
+ * This library provides a flexible and powerful method to format data. At the
+ * heart of the library lie two traits: `Fmt`, for things that are formattable,
+ * and `FormatTable`, that maps placeholders in format strings to actual `Fmt`s
+ * and supply those with information they need to produce output. Unlike with
+ * `format!` from the standard library, there is no restriction that format
+ * strings need to be static; in fact the whole point of the library is to
+ * allow moving as much control over formatting process into the format strings
+ * themselves (and ideally those - in user-editable config files).
+ *
+ * There are several `impl`s of `FormatTable`, most notable for `HashMap`s
+ * (with either `str` or `String` keys, and `Borrow<Fmt>` values, which means a
+ * bit of type annotations required to use those) and `Vec`s (with
+ * `Borrow<Fmt>` elements). The method on `FormatTable` to format a string is
+ * `format(&self, format_string: &str) -> Result<String, FormattingError>`
+ *
+ * Each format string consists of one or several literals and placeholders,
+ * optionally separated by colons ("`:`"). If you need a colon in your literal
+ * or some part of a placeholder, you need to escape it: `"\:"`. In its
+ * simplest form, a placeholder looks like this: `"{foobar}"` (brackets can be
+ * escaped too, if you need them in a literal or somewhere else). This will
+ * request the format table that does the formatting to lookup a `Fmt` named
+ * "foobar" and insert it contents there, or fail if it cannot find it (or
+ * produce it - see 'More fun' section). Of course, this alone is not much use.
+ * Most `Fmt`s support flags that can change the output of the formatting
+ * procedure, for instance floats can request to be printed in exponential
+ * notation. Flags are just single characters and are separated from the
+ * identifier with a colon: `"{foobar:flags}"`. A trailing colon is allowed. 
+ * Some `Fmt`s also support options, which are specified after the flags (and
+ * if you want to use options, you need a flags section, even if it's empty)
+ * and are separated by colons: `"{foobar::option1=value1:option2=value2}"`.
+ * There aren't too many options at the moment. There is also a possibility of
+ * giving arguments to a placeholder, but there's no implementation (yet) of a
+ * `FormatTable` that takes advantage of it.
+ *
+ * See each implementation's entry to learn all the options and flags it
+ * supports.
+ *
+ * So let's see some examples how this all is tied together.
  *
  * # Examples
  * Let's start with something boring:
@@ -9,41 +47,67 @@
  *
  * let i = 2;
  * let j = 5;
- * let mut table: HashMap<String, &Fmt> = HashMap::new();
- * table.insert("i".to_string(), &i);
- * table.insert("j".to_string(), &j);
+ * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * table.insert("i", &i);
+ * table.insert("j", &j);
  * let s = table.format("i = {i}, j = {j}").unwrap();
  * assert!(s == "i = 2, j = 5");
  * ```
- * I can do that with `format!` too. Let's see:
+ * I can do that with `format!` too. This is a bit more fun, and shows both
+ * options and flags:
  * ```
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
  *
- * let input = "a_really_long_string";
- * let mut table: HashMap<String, &Fmt> = HashMap::new();
- * table.insert("s".to_string(), &input);
- * // (note an escaped colon)
- * let s = table.format("fixed width\\: {s::truncate=r5}").unwrap();
- * assert!(s == "fixed width: a_rea");
+ * let s = "a_really_long_string";
+ * let i = 10;
+ * let j = 12;
+ * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * table.insert("s", &s);
+ * table.insert("i", &i);
+ * table.insert("j", &j);
+ * // (note escaped colons)
+ * let s = table.format("hex\\: {i:px}, octal\\: {j:o}, fixed width\\: {s::truncate=r5}").unwrap();
+ * assert!(s == "hex: 0xa, octal: 14, fixed width: a_rea");
  * ```
- * Can't decide if you want your booleans as "true"/"false", or "yes"/"no"?
- * Easy:
+ * Can't decide if you want your booleans as "true" and "false", or "yes" and
+ * "no"? Easy:
  * ```
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
  *
  * let a = true;
  * let b = false;
- * let mut table: HashMap<String, &Fmt> = HashMap::new();
- * table.insert("a".to_string(), &a);
- * table.insert("b".to_string(), &b);
+ * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * table.insert("a", &a);
+ * table.insert("b", &b);
  * let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
  * assert!(s == "true, no, N");
  * ```
- * There are more flags and options, either common or type-specific. See
- * documentation on each implementation of `Fmt` and the section "Common
- * options" below.
+ * And here are `Vec`s as format tables:
+ * ```
+ * use pfmt::{Fmt, FormatTable};
+ * let i = 1;
+ * let j = 2;
+ * let table: Vec<&Fmt> = vec![&i, &j];
+ * let s = table.format("{0}, {1}, {0}").unwrap();
+ * assert!(s == "1, 2, 1");
+ * ```
+ * All of the above examples used references as the element type of the format
+ * tables, but `FormatTable` is implemented (for hashmaps and vectors) for
+ * anything that is `Borrow<Fmt>`, which means boxes, and reference counters
+ * and more. Tables can fully own the data:
+ * ```
+ * use std::collections::HashMap;
+ * use pfmt::{Fmt, FormatTable};
+ * 
+ * let mut table: HashMap<String, Box<Fmt>> = HashMap::new();
+ * table.insert("a".to_string(), Box::new(2) as Box<Fmt>);
+ * table.insert("b".to_string(), Box::new("foobar".to_string()) as Box<Fmt>);
+ * let s = table.format("{a}, {b}").unwrap();
+ * assert!(s == "2, foobar");
+ * ```
+ * This is a bit on the verbose side, though.
  *
  * # Errors
  * `format` method on `FormatTables` returns a `Result<String,
@@ -67,11 +131,88 @@
  * removed instead. Note that `"l0"` is not actually forbidden, just very
  * useless.
  *
+ * It is an `InvalidOptionValue` to pass anything not fitting into the template
+ * in the header as the value of this option.
+ *
  * ## `width`: `{'l', 'c', 'r'} + non-negative integer`
  * Controls the width of the field. Has no effect if the field is already wider
  * than the value supplied. If starts with "`l`", the field will be
  * left-justified. If starts with "`c`", the field will be centered. If starts
  * with "`r`", the field will be right-justified.
+ *
+ * It is an `InvalidOptionValue` to pass anything not fitting into the template
+ * in the header as the value for this option.
+ *
+ * # Common numeric options
+ * Most numeric Fmts honor these. For the detailed description skip to the end
+ * of this section.
+ * * `prec`
+ * * `round`
+ *
+ * ## `prec`: `integer`
+ * Controls precision of the displayed number, with bigger values meaning more
+ * significant digits will be displayed. If negative, the number will be
+ * rounded, the rounding direction is controlled by the `round` option.
+ * Positive values are accepted by integer Fmts, but have no effect.
+ *
+ * It is an `InvalidOptionValue` to pass a string that doesn't parse as a
+ * signed integer as a value to this option.
+ *
+ * ## `round`: `{"up", "down", "nearest"}`
+ * Controls the direction of rounding by the `round` option, and has no effect
+ * without it. Defaults to `nearest`.
+ *
+ * It is an `InvalidOptionValue` to pass a string different from the mentioned
+ * three to this option.
+ *
+ * # More fun
+ * Format tables are not required to actually *hold* the `Fmt`s. They can
+ * produce those on the fly, if you make them to. You only need to implement
+ * `produce_fmt` method:
+ * ```
+ * use pfmt::{Fmt, FormatTable};
+ * 
+ * struct Producer { }
+ *
+ * impl FormatTable for Producer {
+ *      fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+ *          None 
+ *      }
+ *      fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+ *          if let Ok(i) = name.parse::<i32>() {
+ *              Some(Box::new(i))
+ *          } else {
+ *              None
+ *          }
+ *      }
+ * }
+ *
+ * let table = Producer { };
+ * let s = table.format("{1}, {12}").unwrap();
+ * assert!(s == "1, 12");
+ * ```
+ * The above example is not particularly useful, but shows the point.
+ *
+ * There's also an implementation of `FormatTable` for tuples (up to 6-tuples)
+ * that contain format tables. When encountering a placeholder, it first
+ * searches for the relevant `Fmt` in the first table, then in the second and
+ * so on. This allows to easily override some `Fmt`s or provide defaults
+ * without changing the tables themselves.
+ * ```
+ * use std::collections::HashMap;
+ * use pfmt::{Fmt, FormatTable};
+ * 
+ * let i1 = 10;
+ * let i2 = 100;
+ * let j = 2;
+ * let mut table1: HashMap<&str, &Fmt> = HashMap::new();
+ * table1.insert("i", &i1);
+ * table1.insert("j", &j);
+ * let mut table2: HashMap<&str, &Fmt> = HashMap::new();
+ * table2.insert("i", &i2);
+ * let s = (table2, table1).format("{i}, {j}").unwrap();
+ * assert!(s == "100, 2");
+ * ```
  */
 
 #[cfg(test)] #[macro_use] extern crate galvanic_assert;
@@ -90,6 +231,8 @@ pub mod util;
 
 /* ---------- base traits ---------- */
 
+/// This trait drives the formatting of a single placeholder. Placeholder's
+/// arguments, flags and options are passed to the `format` method.
 pub trait Fmt {
     fn format(&self, 
               args: &[String],
@@ -98,6 +241,20 @@ pub trait Fmt {
         -> Result<String, SingleFmtError>;
 }
 
+/// Objects implementing this trait drive the formatting process by supplying
+/// information to the contained or produced `Fmt`s.
+/// 
+/// The main method you should
+/// supply if you want to create your own implementation is `get_fmt`, which
+/// should produce a reference to a `Fmt` that the table holds, or `None` if
+/// there's no `Fmt` with the supplied name (what is a name is entirely up to
+/// you. Whatever you can comfortably encode in a string is fine).
+/// 
+/// `produce_fmt` is called when a `Fmt` with the supplied name could not be
+/// found, and should create such a `Fmt` if it can, or return `None` if it
+/// can't.
+/// 
+/// The main method for formatting is `format`.
 pub trait FormatTable {
     fn get_fmt(&self, name: &str) -> Option<&Fmt>;
     fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
@@ -149,8 +306,16 @@ fn format_unwrapped<T: FormatTable>(table: &T, fmt: &Fmt, args: &[Piece], flags:
 /// Errors that happen in individual formattables.
 #[derive(Debug, PartialEq)]
 pub enum SingleFmtError {
+    /// Returned if a `Fmt` receives a flag it doesn't know how to handle.
+    /// It's not actually used by the `impl`s for the standard types, but you
+    /// can use it if you wish to be strict.
     UnknownFlag(char),
+    /// Returned if a `Fmt` receives an option it doesn't know how to handle.
+    /// Again, standard types do not do this, they are not strict.
     UnknownOption(String),
+    /// Returned when a given option (stored in the first field) contains an
+    /// invalid value (stored in the second field). Standard types *do* use
+    /// this.
     InvalidOptionValue(String, String)
 }
 
@@ -158,14 +323,25 @@ pub enum SingleFmtError {
 #[derive(Debug, PartialEq)]
 pub enum FormattingError {
     // Parsing errors.
+    /// Returned if a placeholder has an empty name. Contains the erroneous
+    /// input.
     EmptyName(String),
+    /// Retuned if an argument list is not closed off with a bracket. Contains
+    /// the erroneous input.
     UnterminatedArgumentList(String),
+    /// Returned if a placeholder is not terminated. Contains the erroneous
+    /// input.
     UnterminatedPlaceholder(String),
     // Errors from single Fmts.
+    /// A `SingleFmtError::UnknownFlag` is propagated as this.
     UnknownFlag(char),
+    /// A `SingleFmtError::UnknownOption` is propagated as this.
     UnknownOption(String),
+    /// A `SingleFmtError::InvalidOptionValue` is propagated as this.
     InvalidOptionValue(String, String),
     // General errors.
+    /// Returned if the table could neither find nor produce a `Fmt` with the
+    /// given name (contained as the only field).
     UnknownFmt(String)
 }
 
