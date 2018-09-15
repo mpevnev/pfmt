@@ -255,7 +255,7 @@ fn present_hexadecimal<T>(i: T, prefix: bool) -> String
         let ch = if index < 10 {
             (index + '0' as u8) as char
         } else {
-            (index + 'a' as u8) as char
+            (index - 10 + 'a' as u8) as char
         };
         chars.push(ch);
         i = i / hex;
