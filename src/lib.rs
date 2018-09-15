@@ -853,6 +853,14 @@ mod fmt_tests {
             assert_that!(&s.as_str(), eq("-1011, -13, -b"));
         }
 
+        test rounding() {
+            let i = 1235;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i::prec=-1}, {i::prec=-2}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1240, 1200"));
+        }
+
     }
 
     test_suite! {

@@ -329,7 +329,7 @@ fn apply_integer_rounding<T>(i: &mut T, base: T, options: &HashMap<String, Strin
         match get_rounding(options)? {
             Some(Rounding::Up()) => {
                 if rem > T::zero() {
-                    *i = quot * div + T::one();
+                    *i = (quot + T::one()) * div;
                 } else {
                     *i = quot * div;
                 }
@@ -339,7 +339,7 @@ fn apply_integer_rounding<T>(i: &mut T, base: T, options: &HashMap<String, Strin
             },
             Some(Rounding::Nearest()) | None => {
                 if rem >= div / two {
-                    *i = quot * div + T::one();
+                    *i = (quot + T::one()) * div;
                 } else {
                     *i = quot * div;
                 }
