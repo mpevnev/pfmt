@@ -444,6 +444,101 @@ impl Fmt for i8 {
         }
 }
 
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for i16 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for i32 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for i64 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for i128 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which forces display of the sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes output hexadecimal;
+/// Common and common numeric options are recognized.
+impl Fmt for isize {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            util::add_sign(&mut s, *self, flags)?;
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
 /// This instance has no special flags.
 /// Common options are recognised.
 impl<'a> Fmt for &'a str {
@@ -468,11 +563,129 @@ impl Fmt for String {
         }
 }
 
-impl Fmt for i32 {
-    fn format(&self, _args: &[String], _flags: &[char], _options: &HashMap<String, String>)
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for u8 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
-            Ok(self.to_string())
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for u16 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for u32 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for u64 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for u128 {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
+        }
+}
+
+/// This instance is aware of the following flags:
+/// * `+`, which add a leading plus sign;
+/// * `b`, which makes the output binary;
+/// * `o`, which makes the output octal;
+/// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a radix prefix
+/// to the output.
+/// * `x`, which makes the output hexadecimal.
+/// Common and common numeric options are recognised.
+impl Fmt for usize {
+    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            let mut s = util::int_to_str(*self, flags, options)?;
+            if flags.contains(&'+') {
+                s.insert(0, '+');
+            }
+            util::apply_common_options(&mut s, options)?;
+            Ok(s)
         }
 }
 
@@ -508,7 +721,7 @@ mod fmt_tests {
         name boolean;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, FormattingError};
+        use {FormatTable, Fmt};
 
         test flags() {
             let a = true;
@@ -526,7 +739,7 @@ mod fmt_tests {
         name char;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, FormattingError};
+        use {FormatTable, Fmt};
 
         test boring() {
             let c = 'z';
@@ -542,7 +755,7 @@ mod fmt_tests {
         name floats;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, FormattingError};
+        use {FormatTable, Fmt};
 
         test exp_precision_neg() {
             let f: f32 = 1_234_567.891;
@@ -603,10 +816,42 @@ mod fmt_tests {
     }
 
     test_suite! {
+        name integers;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt};
+
+        test basic() {
+            let i = 10;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("10"));
+        }
+
+        test different_radices() {
+            let i = 11;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i:b}, {i:o}, {i:x}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1011, 13, b"));
+        }
+
+        test radix_prefixes() {
+            let i = 1;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i:bp}, {i:op}, {i:xp}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("0b1, 0o1, 0x1"));
+        }
+
+    }
+
+    test_suite! {
         name common_options;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, FormattingError};
+        use {FormatTable, Fmt};
 
         test width_left() {
             let string = "foobar";
@@ -690,7 +935,7 @@ mod table_tests {
     test_suite! {
         name tuples;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, FormattingError};
+        use {FormatTable, Fmt};
 
         test defaulting() {
             let a: Vec<Box<Fmt>> = vec![Box::new(-1), Box::new(-2)];
