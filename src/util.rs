@@ -164,19 +164,19 @@ pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
     Ok(f.to_string())
 }
 
-pub fn int_to_str<T>(i: T, flags: &[char], _options: &HashMap<String, String>)
+pub fn int_to_str<T>(i: T, flags: &[char], options: &HashMap<String, String>)
     -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + ToString + Copy
 {
     let prefix = flags.contains(&'p');
     if flags.contains(&'b') {
-        Ok(present_binary(i, prefix))
+        Ok(present_binary(i, prefix, options)?)
     } else if flags.contains(&'o') {
-        Ok(present_octal(i, prefix))
+        Ok(present_octal(i, prefix, options)?)
     } else if flags.contains(&'x') {
-        Ok(present_hexadecimal(i, prefix))
+        Ok(present_hexadecimal(i, prefix, options)?)
     } else {
-        Ok(i.to_string())
+        Ok(present_decimal(i, options)?)
     }
 }
 
@@ -208,12 +208,14 @@ fn get_precision(options: &HashMap<String, String>)
     }
 }
 
-fn present_binary<T>(i: T, prefix: bool) -> String
+fn present_binary<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
+    -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
-    let mut chars = Vec::new();
     let mut i = i;
     let two = T::from_i32(2).unwrap();
+    apply_integer_rounding(&mut i, two, options)?;
+    let mut chars = Vec::new();
     while i > T::zero() {
         let ch = ((i % two).to_u8().unwrap() + '0' as u8) as char;
         chars.push(ch);
@@ -223,15 +225,17 @@ fn present_binary<T>(i: T, prefix: bool) -> String
         chars.push('b');
         chars.push('0');
     }
-    chars.iter().rev().collect()
+    Ok(chars.iter().rev().collect())
 }
 
-fn present_octal<T>(i: T, prefix: bool) -> String
+fn present_octal<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
+    -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
     let mut chars = Vec::new();
     let mut i = i;
     let eight = T::from_i32(8).unwrap();
+    apply_integer_rounding(&mut i, eight, options)?;
     while i > T::zero() {
         let ch = ((i % eight).to_u8().unwrap() + '0' as u8) as char;
         chars.push(ch);
@@ -241,15 +245,17 @@ fn present_octal<T>(i: T, prefix: bool) -> String
         chars.push('o');
         chars.push('0');
     }
-    chars.iter().rev().collect()
+    Ok(chars.iter().rev().collect())
 }
 
-fn present_hexadecimal<T>(i: T, prefix: bool) -> String
+fn present_hexadecimal<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
+    -> Result<String, SingleFmtError>
     where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
 {
     let mut chars = Vec::new();
     let mut i = i;
     let hex = T::from_i32(16).unwrap();
+    apply_integer_rounding(&mut i, hex, options)?;
     while i > T::zero() {
         let index = (i % hex).to_u8().unwrap();
         let ch = if index < 10 {
@@ -264,7 +270,21 @@ fn present_hexadecimal<T>(i: T, prefix: bool) -> String
         chars.push('x');
         chars.push('0');
     }
-    chars.iter().rev().collect()
+    Ok(chars.iter().rev().collect())
+}
+
+fn present_decimal<T>(i: T, options: &HashMap<String, String>)
+    -> Result<String, SingleFmtError>
+    where T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy
+{
+    let mut i = i;
+    let ten = T::from_i32(10).unwrap();
+    apply_integer_rounding(&mut i, ten, options)?;
+    let mut res = i.to_string();
+    if i < T::zero() {
+        res = res[1..].to_string();
+    }
+    Ok(res)
 }
 
 fn get_rounding(options: &HashMap<String, String>)
@@ -283,4 +303,52 @@ fn get_rounding(options: &HashMap<String, String>)
     } else {
         Ok(None)
     }
+}
+
+fn ipow<T, P>(i: T, p: P) -> T
+    where T: num::Integer + num::Zero + num::One + Copy,
+          P: num::Integer + num::Zero + num::One + Copy
+{
+    let mut res = T::one();
+    let mut p = p;
+    while p > P::zero() {
+        res = res * i;
+        p = p - P::one();
+    }
+    res
+}
+
+fn apply_integer_rounding<T>(i: &mut T, base: T, options: &HashMap<String, String>)
+    -> Result<(), SingleFmtError>
+    where T: num::Integer + num::FromPrimitive + num::Zero + num::One + Copy
+{
+    if let Some(prec) = get_precision(options)? {
+        if prec >= 0 {
+            return Ok(());
+        }
+        let two = T::from_i32(2).unwrap();
+        let div = ipow(base, -prec);
+        let rem = *i % div;
+        let quot = *i / div;
+        match get_rounding(options)? {
+            Some(Rounding::Up()) => {
+                if rem > T::zero() {
+                    *i = quot * div + T::one();
+                } else {
+                    *i = quot * div;
+                }
+            },
+            Some(Rounding::Down()) => {
+                *i = quot * div;
+            },
+            Some(Rounding::Nearest()) | None => {
+                if rem >= div / two {
+                    *i = quot * div + T::one();
+                } else {
+                    *i = quot * div;
+                }
+            }
+        }
+    }
+    Ok(())
 }
