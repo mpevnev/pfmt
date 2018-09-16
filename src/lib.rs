@@ -222,6 +222,7 @@ extern crate num;
 
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use parse::{parse, Piece, ParseError};
 
@@ -241,44 +242,27 @@ pub trait Fmt {
         -> Result<String, SingleFmtError>;
 }
 
-/// Objects implementing this trait drive the formatting process by supplying
-/// information to the contained or produced `Fmt`s.
-/// 
-/// The main method you should
-/// supply if you want to create your own implementation is `get_fmt`, which
-/// should produce a reference to a `Fmt` that the table holds, or `None` if
-/// there's no `Fmt` with the supplied name (what is a name is entirely up to
-/// you. Whatever you can comfortably encode in a string is fine).
-/// 
-/// `produce_fmt` is called when a `Fmt` with the supplied name could not be
-/// found, and should create such a `Fmt` if it can, or return `None` if it
-/// can't.
-/// 
-/// The main method for formatting is `format`.
 pub trait FormatTable {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt>;
-    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
-        None
-    }
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>>;
 
     fn format(&self, input: &str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         let mut res = String::new();
         for piece in pieces.iter() {
-            res.push_str(&format_one(&self, piece)?);
+            res.push_str(&format_one(self, piece)?);
         }
         Ok(res)
     }
 }
 
-fn format_one<T: FormatTable>(table: &T, piece: &Piece) -> Result<String, FormattingError> {
+fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece) 
+    -> Result<String, FormattingError> 
+{
     match piece {
         Piece::Literal(s) => Ok(s.clone()),
         Piece::Placeholder(name, args, flags, opts) => {
             if let Some(fmt) = table.get_fmt(&name) {
-                format_unwrapped(table, fmt, args, flags, opts)
-            } else if let Some(fmtbox) = table.produce_fmt(&name) {
-                format_unwrapped(table, fmtbox.borrow(), args, flags, opts)
+                format_unwrapped(table, &fmt, args, flags, opts)
             } else {
                 Err(FormattingError::UnknownFmt(name.clone()))
             }
@@ -286,9 +270,10 @@ fn format_one<T: FormatTable>(table: &T, piece: &Piece) -> Result<String, Format
     }
 }
 
-fn format_unwrapped<T: FormatTable>(table: &T, fmt: &Fmt, args: &[Piece], flags: &[char],
+fn format_unwrapped<T>(table: &T, fmt: &Fmt, args: &[Piece], flags: &[char],
                     opts: &HashMap<String, Piece>)
     -> Result<String, FormattingError>
+    where T: FormatTable + ?Sized
 {
     let mut string_args = Vec::new();
     for arg in args.iter() {
@@ -299,6 +284,32 @@ fn format_unwrapped<T: FormatTable>(table: &T, fmt: &Fmt, args: &[Piece], flags:
         string_opts.insert(key.clone(), format_one(table, value)?);
     }
     Ok(fmt.format(&string_args, &flags, &string_opts)?)
+}
+
+/* ---------- an important helper thing ---------- */
+
+pub enum BoxOrRef<'a, T: ?Sized + 'a> {
+    Boxed(Box<T>),
+    Ref(&'a T)
+}
+
+impl<'a, T: ?Sized + 'a> Deref for BoxOrRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        match self {
+            BoxOrRef::Boxed(b) => &b,
+            BoxOrRef::Ref(r) => r
+        }
+    }
+}
+
+impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
+    fn borrow(&self) -> &T {
+        match self {
+            BoxOrRef::Boxed(b) => b.borrow(),
+            BoxOrRef::Ref(r) => r
+        }
+    }
 }
 
 /* ---------- errors ---------- */
@@ -368,40 +379,42 @@ impl From<ParseError> for FormattingError {
     }
 }
 
-/* ---------- implementations of FormatTable for standard types ---------- */
+/* ---------- key implementations ---------- */
 
-impl<'a, T: FormatTable + ?Sized> FormatTable for &'a T {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
+    fn format(&self, args: &[String], flags: &[char], options: &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+        {
+            self.borrow().format(args, flags, options)
+        }
+}
+
+impl<'a, T: FormatTable> FormatTable for &'a T {
+    fn get_fmt<'b, 'c>(&'b self, name: &'c str) -> Option<BoxOrRef<'b, dyn Fmt>> {
         (*self).get_fmt(name)
     }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        (*self).produce_fmt(name)
+}
+
+/* ---------- implementations of FormatTable for standard types ---------- */
+
+impl<B: Borrow<dyn Fmt>> FormatTable for HashMap<String, B> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+        self.get(name).map(|b| BoxOrRef::Ref(b.borrow()))
     }
 }
 
-impl<B: Borrow<Fmt>> FormatTable for HashMap<String, B> {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
-        self.get(name).map(|r| r.borrow())
-    }
-    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
-        None
+impl<'a, B: Borrow<dyn Fmt>> FormatTable for HashMap<&'a str, B> {
+    fn get_fmt<'b, 'c>(&'b self, name: &'c str) -> Option<BoxOrRef<'b, dyn Fmt>> {
+        self.get(name).map(|r| BoxOrRef::Ref(r.borrow()))
     }
 }
 
-impl<'a, B: Borrow<Fmt>> FormatTable for HashMap<&'a str, B> {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
-        self.get(name).map(|r| r.borrow())
-    }
-    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
-        None
-    }
-}
 
-impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         if let Ok(index) = name.parse::<usize>() {
             if index < self.len() {
-                Some(self[index].borrow())
+                Some(BoxOrRef::Ref(self[index].borrow()))
             } else {
                 None
             }
@@ -409,22 +422,15 @@ impl<B: Borrow<Fmt>> FormatTable for Vec<B> {
             None
         }
     }
-    fn produce_fmt(&self, _name: &str) -> Option<Box<Fmt>> {
-        None
-    }
 }
 
 impl<A, B> FormatTable for (A, B) 
     where A: FormatTable,
           B: FormatTable
 {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.0.get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
-    }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        self.0.produce_fmt(name)
-            .or_else(|| self.1.produce_fmt(name))
     }
 }
 
@@ -433,15 +439,10 @@ impl<A, B, C> FormatTable for (A, B, C)
           B: FormatTable,
           C: FormatTable
 {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.0.get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
-    }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        self.0.produce_fmt(name)
-            .or_else(|| self.1.produce_fmt(name))
-            .or_else(|| self.2.produce_fmt(name))
     }
 }
 
@@ -451,17 +452,11 @@ impl<A, B, C, D> FormatTable for (A, B, C, D)
           C: FormatTable,
           D: FormatTable
 {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.0.get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
-    }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        self.0.produce_fmt(name)
-            .or_else(|| self.1.produce_fmt(name))
-            .or_else(|| self.2.produce_fmt(name))
-            .or_else(|| self.3.produce_fmt(name))
     }
 }
 
@@ -472,19 +467,12 @@ impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
           D: FormatTable,
           E: FormatTable
 {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.0.get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
             .or_else(|| self.4.get_fmt(name))
-    }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        self.0.produce_fmt(name)
-            .or_else(|| self.1.produce_fmt(name))
-            .or_else(|| self.2.produce_fmt(name))
-            .or_else(|| self.3.produce_fmt(name))
-            .or_else(|| self.4.produce_fmt(name))
     }
 }
 
@@ -496,21 +484,13 @@ impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
           E: FormatTable,
           F: FormatTable
 {
-    fn get_fmt(&self, name: &str) -> Option<&Fmt> {
+    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.0.get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
             .or_else(|| self.4.get_fmt(name))
             .or_else(|| self.5.get_fmt(name))
-    }
-    fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
-        self.0.produce_fmt(name)
-            .or_else(|| self.1.produce_fmt(name))
-            .or_else(|| self.2.produce_fmt(name))
-            .or_else(|| self.3.produce_fmt(name))
-            .or_else(|| self.4.produce_fmt(name))
-            .or_else(|| self.5.produce_fmt(name))
     }
 }
 
