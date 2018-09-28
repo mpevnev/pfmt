@@ -562,4 +562,49 @@ mod tests {
 
     }
 
+    test_suite! {
+        name names;
+        use galvanic_assert::matchers::*;
+
+        use parse::*;
+        use Piece::*;
+
+        test several_segments() {
+            let s = "{a.b.c}";
+            let res = parse(&s);
+            let pieces = res.expect("Failed to get any pieces");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece, has_structure!(
+                    Placeholder [
+                        eq(vec!["a".to_string(), "b".to_string(), "c".to_string()]),
+                        any_value(),
+                        any_value(),
+                        any_value()
+                    ]));
+        }
+
+        test empty_segment() {
+            let s = "{a..c}";
+            let res = parse(&s);
+            assert_that!(&res, eq(Err(ParseError::EmptyNameSegment("{a..c}".to_string()))));
+        }
+
+        test escapes_in_segments() {
+            let s = "{a\\..b}";
+            let res = parse(&s);
+            let pieces = res.expect("Failed to get any pieces");
+            assert_that!(&pieces.len(), eq(1));
+            let piece = &pieces[0];
+            assert_that!(&piece, has_structure!(
+                    Placeholder [
+                        eq(vec!["a.".to_string(), "b".to_string()]),
+                        any_value(),
+                        any_value(),
+                        any_value()
+                    ]));
+        }
+
+    }
+
 }
