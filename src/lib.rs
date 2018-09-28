@@ -168,19 +168,18 @@
  * # More fun
  * Format tables are not required to actually *hold* the `Fmt`s. They can
  * produce those on the fly, if you make them to. You only need to implement
- * `produce_fmt` method:
+ * the `get_fmt` method a bit differently:
  * ```
- * use pfmt::{Fmt, FormatTable};
+ * use pfmt::{Fmt, FormatTable, BoxOrRef};
  * 
  * struct Producer { }
  *
  * impl FormatTable for Producer {
- *      fn get_fmt(&self, name: &str) -> Option<&Fmt> {
- *          None 
- *      }
- *      fn produce_fmt(&self, name: &str) -> Option<Box<Fmt>> {
+ *      fn get_fmt<'a, 'b>(&'a self, name: &'b str)
+ *          -> Option<BoxOrRef<'a, dyn Fmt>>
+ *      {
  *          if let Ok(i) = name.parse::<i32>() {
- *              Some(Box::new(i))
+ *              Some(BoxOrRef::Boxed(Box::new(i)))
  *          } else {
  *              None
  *          }
