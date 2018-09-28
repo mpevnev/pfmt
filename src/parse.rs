@@ -322,7 +322,7 @@ mod tests {
             assert_that!(&a, eq(Literal("a".to_string())));
             assert_that!(&c, eq(Literal("c".to_string())));
             assert_that!(&b, has_structure!(Placeholder [
-                                            eq("b".to_string()),
+                                            eq(vec!["b".to_string()]),
                                             eq(Vec::new()),
                                             eq(Vec::new()),
                                             eq(HashMap::new())
@@ -337,7 +337,7 @@ mod tests {
             let b = &pieces[1];
             assert_that!(&a, eq(Literal("a".to_string())));
             assert_that!(&b, has_structure!(Placeholder [
-                                            eq("b".to_string()),
+                                            eq(vec!["b".to_string()]),
                                             eq(Vec::new()),
                                             eq(Vec::new()),
                                             eq(HashMap::new())
@@ -354,14 +354,14 @@ mod tests {
             let d = &pieces[3];
             assert_that!(&a, eq(Literal("a".to_string())));
             assert_that!(&b, has_structure!(Placeholder [
-                                            eq("b".to_string()),
+                                            eq(vec!["b".to_string()]),
                                             eq(Vec::new()),
                                             eq(Vec::new()),
                                             eq(HashMap::new())
             ]));
             assert_that!(&c, eq(Literal("c".to_string())));
             assert_that!(&d, has_structure!(Placeholder [
-                                            eq("d".to_string()),
+                                            eq(vec!["d".to_string()]),
                                             eq(Vec::new()),
                                             eq(Vec::new()),
                                             eq(HashMap::new())
@@ -374,7 +374,7 @@ mod tests {
             assert_that!(&pieces.len(), eq(2));
             let pl = &pieces[0];
             assert_that!(&pl,
-                         eq(Placeholder("foobar".to_string(),
+                         eq(Placeholder(vec!["foobar".to_string()],
                          Vec::new(),
                          Vec::new(),
                          HashMap::new()
@@ -396,7 +396,7 @@ mod tests {
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(&piece, eq(Placeholder("fo:ob\\ar{}".to_string(),
+            assert_that!(&piece, eq(Placeholder(vec!["fo:ob\\ar{}".to_string()],
                                                 Vec::new(),
                                                 Vec::new(),
                                                 HashMap::new())));
@@ -407,7 +407,7 @@ mod tests {
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(&piece, eq(Placeholder("foobar".to_string(),
+            assert_that!(&piece, eq(Placeholder(vec!["foobar".to_string()],
                                                 Vec::new(),
                                                 Vec::new(),
                                                 {
@@ -424,7 +424,7 @@ mod tests {
             let pieces = parse(&s).expect("Parse failed");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(piece, eq(Placeholder("foobar".to_string(),
+            assert_that!(piece, eq(Placeholder(vec!["foobar".to_string()],
                                     Vec::new(),
                                     Vec::new(),
                                     {
@@ -499,12 +499,13 @@ mod tests {
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(&piece,
-                         eq(Placeholder("foobar".to_string(),
-                            vec![Literal("asdf".to_string())],
-                            Vec::new(),
-                            HashMap::new()
-                            )));
+            assert_that!(&piece, has_structure!(
+                    Placeholder [
+                        any_value(), 
+                        eq(vec![Literal("asdf".to_string())]),
+                        any_value(),
+                        any_value()
+                    ]));
         }
 
         test two_literals() {
@@ -512,12 +513,13 @@ mod tests {
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(&piece,
-                         eq(Placeholder("foobar".to_string(),
-                         vec![Literal("a".to_string()), Literal("b".to_string())],
-                         Vec::new(),
-                         HashMap::new()
-                         )));
+            assert_that!(&piece, has_structure!(
+                    Placeholder [
+                        any_value(),
+                        eq(vec![Literal("a".to_string()), Literal("b".to_string())]),
+                        any_value(),
+                        any_value()
+                    ]));
         }
 
         test empty_arguments() {
@@ -525,13 +527,16 @@ mod tests {
             let pieces = parse(&s).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
-            assert_that!(&piece,
-                         eq(Placeholder("foobar".to_string(),
-                            vec![Literal("".to_string()), Literal("".to_string()),
-                                Literal("".to_string())],
-                            Vec::new(),
-                            HashMap::new()
-                        )));
+            assert_that!(&piece, has_structure!(
+                    Placeholder [
+                        any_value(),
+                        eq(vec![Literal("".to_string()),
+                                Literal("".to_string()),
+                                Literal("".to_string())
+                        ]),
+                        any_value(),
+                        any_value()
+                    ]));
         }
 
         test full_literal() {
@@ -541,7 +546,7 @@ mod tests {
             let piece = &pieces[0];
             if let Placeholder(_, args, _, _) = piece {
                 assert_that!(&args.len(), eq(1));
-                assert_that!(&args[0], eq(Placeholder("baz".to_string(),
+                assert_that!(&args[0], eq(Placeholder(vec!["baz".to_string()],
                                             vec![Literal("arg".to_string())],
                                             vec!['f', 'l', 'a', 'g', 's'],
                                             {
