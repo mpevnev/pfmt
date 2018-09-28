@@ -192,6 +192,22 @@ pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char])
     Ok(())
 }
 
+/* ---------- misc ---------- */
+
+pub fn join_name(name: &[String]) -> String {
+    let mut res = String::with_capacity(name.len() 
+                                        + name.iter().fold(0, |acc, s| acc + s.len()));
+    let mut iter = name.iter();
+    if let Some(s) = iter.next() {
+        res.push_str(&s);
+    }
+    for s in iter {
+        res.push('.');
+        res.push_str(&s);
+    }
+    res
+}
+
 /* ---------- helpers ---------- */
 
 fn get_precision(options: &HashMap<String, String>)

@@ -240,6 +240,10 @@ pub trait Fmt {
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>;
+
+    fn get_subfmt<'a, 'b>(&'a self, _name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+        None
+    }
 }
 
 pub trait FormatTable {
@@ -261,29 +265,50 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece)
     match piece {
         Piece::Literal(s) => Ok(s.clone()),
         Piece::Placeholder(name, args, flags, opts) => {
-            if let Some(fmt) = table.get_fmt(&name) {
-                format_unwrapped(table, &fmt, args, flags, opts)
+            /*
+            if let Some(fmt) = resolve_name(table, &name).last() {
+                format_unwrapped(table, fmt, args, flags, opts)
             } else {
-                Err(FormattingError::UnknownFmt(name.clone()))
+                Err(FormattingError::UnknownFmt(util::join_name(&name)))
+            }
+            */
+            if let Some(root) = table.get_fmt(&name[0]) {
+                let mut processed_args = Vec::with_capacity(args.len());
+                for arg in args.iter() {
+                    processed_args.push(format_one(table, arg)?);
+                }
+                let mut processed_opts = HashMap::new();
+                for (key, piece) in opts.iter() {
+                    processed_opts.insert(key.clone(), format_one(table, piece)?);
+                }
+                follow_name(name, &name[1..], &root, &processed_args, flags, &processed_opts)
+            } else {
+                Err(FormattingError::UnknownFmt(util::join_name(&name)))
             }
         }
     }
 }
 
-fn format_unwrapped<T>(table: &T, fmt: &Fmt, args: &[Piece], flags: &[char],
-                    opts: &HashMap<String, Piece>)
+/* ---------- name resolution ---------- */
+
+fn follow_name(
+    full_name: &[String],
+    name: &[String],
+    fmt: &Fmt,
+    args: &[String],
+    flags: &[char],
+    options: &HashMap<String, String>)
     -> Result<String, FormattingError>
-    where T: FormatTable + ?Sized
 {
-    let mut string_args = Vec::new();
-    for arg in args.iter() {
-        string_args.push(format_one(table, arg)?);
+    if name.is_empty() {
+        Ok(fmt.format(args, flags, options)?)
+    } else {
+        if let Some(next) = fmt.get_subfmt(&name[0]) {
+            follow_name(full_name, &name[1..], &next, args, flags, options)
+        } else {
+            Err(FormattingError::UnknownFmt(util::join_name(&full_name)))
+        }
     }
-    let mut string_opts = HashMap::new();
-    for (key, value) in opts.iter() {
-        string_opts.insert(key.clone(), format_one(table, value)?);
-    }
-    Ok(fmt.format(&string_args, &flags, &string_opts)?)
 }
 
 /* ---------- an important helper thing ---------- */
@@ -370,7 +395,7 @@ impl From<SingleFmtError> for FormattingError {
 impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
         match err {
-            ParseError::EmptyName(s) => FormattingError::EmptyName(s),
+            ParseError::EmptyNameSegment(s) => FormattingError::EmptyName(s),
             ParseError::UnterminatedArgumentList(s) =>
                 FormattingError::UnterminatedArgumentList(s),
             ParseError::UnterminatedPlaceholder(s) =>

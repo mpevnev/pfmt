@@ -5,19 +5,20 @@ const SETOPT: char = '=';
 const FIELD_SEPARATOR: char = ':';
 const OPENING_BRACKET: char = '{';
 const CLOSING_BRACKET: char = '}';
+const DOT: char = '.';
 const MAX_RECURSION_DEPTH: u8 = 100;
 
 /// Either a literal string, or a placecholder.
 #[derive(Debug, PartialEq)]
 pub enum Piece {
     Literal(String),
-    Placeholder(String, Vec<Piece>, Vec<char>, HashMap<String, Piece>)
+    Placeholder(Vec<String>, Vec<Piece>, Vec<char>, HashMap<String, Piece>)
 }
 
 /// Errors that occur during parsing a format string.
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
-    EmptyName(String),
+    EmptyNameSegment(String),
     UnterminatedArgumentList(String),
     UnterminatedPlaceholder(String)
 }
@@ -96,25 +97,35 @@ fn parse_placeholder(input: &str, recursion_depth: u8)
 }
 
 fn extract_name<'a, 'b>(orig_input: &'a str, input: &'b str) 
-    -> Result<(String, &'b str), ParseError>
+    -> Result<(Vec<String>, &'b str), ParseError>
 {
-    let mut name = String::new();
+    let mut name = Vec::new();
+    let mut segment = String::new();
     let mut prev = None;
     for (i, ch) in input.char_indices() {
         if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET || ch == CLOSING_BRACKET {
             if prev == Some(ESCAPE) {
-                name.push(ch);
+                segment.push(ch);
                 prev = Some(ch);
             } else {
-                return Ok((trim_name(orig_input, &name)?, &input[i..]));
+                name.push(segment);
+                let mut res = Vec::with_capacity(name.len());
+                for segm in name.iter() {
+                    res.push(trim_name(orig_input, &segm)?);
+                }
+                return Ok((res, &input[i..]));
             }
+        } else if ch == DOT && prev != Some(ESCAPE) {
+            name.push(segment);
+            segment = String::new();
+            prev = Some(ch);
         } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            name.push(ESCAPE);
+            segment.push(ESCAPE);
             prev = None;
         } else if ch == ESCAPE {
             prev = Some(ch);
         } else {
-            name.push(ch);
+            segment.push(ch);
             prev = Some(ch);
         }
     }
@@ -275,7 +286,7 @@ fn grab_until_terminator(input: &str) -> Result<(Piece, &str), ParseError> {
 fn trim_name(global_source: &str, name: &str) -> Result<String, ParseError> {
     let res = name.trim().to_string();
     if res.is_empty() {
-        Err(ParseError::EmptyName(global_source.to_string()))
+        Err(ParseError::EmptyNameSegment(global_source.to_string()))
     } else {
         Ok(res)
     }
