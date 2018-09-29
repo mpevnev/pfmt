@@ -235,6 +235,7 @@ pub mod util;
 /// arguments, flags and options are passed to the `format` method.
 pub trait Fmt {
     fn format(&self, 
+              name: &[String],
               args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
@@ -300,7 +301,7 @@ fn follow_name(
     -> Result<String, FormattingError>
 {
     if name.is_empty() {
-        Ok(fmt.format(args, flags, options)?)
+        Ok(fmt.format(full_name, args, flags, options)?)
     } else {
         if let Some(next) = fmt.get_subfmt(&name[0]) {
             follow_name(full_name, &name[1..], &next, args, flags, options)
@@ -414,10 +415,14 @@ impl From<ParseError> for FormattingError {
 /* ---------- key implementations ---------- */
 
 impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
-    fn format(&self, args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              name: &[String],
+              args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
-            self.borrow().format(args, flags, options)
+            self.borrow().format(name, args, flags, options)
         }
 }
 
@@ -440,7 +445,6 @@ impl<'a, B: Borrow<dyn Fmt>> FormatTable for HashMap<&'a str, B> {
         self.get(name).map(|r| BoxOrRef::Ref(r.borrow()))
     }
 }
-
 
 impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
@@ -526,11 +530,7 @@ impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
     }
 }
 
-*/
-
 /* ---------- implementations of Fmt for standard types ---------- */
-
-/*
 
 /// This instance is aware of the following flags:
 /// * `y`, which changes the output from true/false to yes/no;
