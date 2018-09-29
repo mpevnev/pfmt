@@ -343,15 +343,20 @@ impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
 pub enum SingleFmtError {
     /// Returned if a `Fmt` receives a flag it doesn't know how to handle.
     /// It's not actually used by the `impl`s for the standard types, but you
-    /// can use it if you wish to be strict.
+    /// can use it if you wish to be strict. Contains the erroneous flag.
     UnknownFlag(char),
     /// Returned if a `Fmt` receives an option it doesn't know how to handle.
-    /// Again, standard types do not do this, they are not strict.
+    /// Again, standard types do not do this, they are not strict. Contains the
+    /// erroneous option.
     UnknownOption(String),
     /// Returned when a given option (stored in the first field) contains an
     /// invalid value (stored in the second field). Standard types *do* use
-    /// this.
-    InvalidOptionValue(String, String)
+    /// this. Contains a pair of erroneous option's name and value.
+    InvalidOptionValue(String, String),
+    /// Returned when a 'Fmt' that is only used as a container to hold/produce
+    /// other `Fmt`s via the dot access syntax is used directly. Contains the 
+    /// path to the format unit used in such fashion.
+    NamespaceOnlyFmt(String)
 }
 
 /// Any error that can happen during formatting.
@@ -374,6 +379,8 @@ pub enum FormattingError {
     UnknownOption(String),
     /// A `SingleFmtError::InvalidOptionValue` is propagated as this.
     InvalidOptionValue(String, String),
+    /// A `SingleFmtError::NamespaceOnlyFmt` is propagated as this.
+    NamespaceOnlyFmt(String),
     // General errors.
     /// Returned if the table could neither find nor produce a `Fmt` with the
     /// given name (contained as the only field).
@@ -386,7 +393,8 @@ impl From<SingleFmtError> for FormattingError {
             SingleFmtError::UnknownFlag(c) => FormattingError::UnknownFlag(c),
             SingleFmtError::UnknownOption(s) => FormattingError::UnknownOption(s),
             SingleFmtError::InvalidOptionValue(opt, val) =>
-                FormattingError::InvalidOptionValue(opt, val)
+                FormattingError::InvalidOptionValue(opt, val),
+            SingleFmtError::NamespaceOnlyFmt(s) => FormattingError::NamespaceOnlyFmt(s)
         }
     }
 }
@@ -518,14 +526,22 @@ impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
     }
 }
 
+*/
+
 /* ---------- implementations of Fmt for standard types ---------- */
+
+/*
 
 /// This instance is aware of the following flags:
 /// * `y`, which changes the output from true/false to yes/no;
 /// * `Y`, which changes the output to Y/N.
 /// Common options are recognised.
 impl Fmt for bool {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut res = if *self {
@@ -553,7 +569,11 @@ impl Fmt for bool {
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for char {
-    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              _flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.to_string();
@@ -569,7 +589,11 @@ impl Fmt for char {
 /// Common options are recognised.
 /// Common numeric options are also recognised.
 impl Fmt for f32 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut res: String;
@@ -590,7 +614,11 @@ impl Fmt for f32 {
 /// Common options are recognized.
 /// Common numeric options are also recognized.
 impl Fmt for f64 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut res: String;
@@ -614,7 +642,11 @@ impl Fmt for f64 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i8 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -633,7 +665,11 @@ impl Fmt for i8 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i16 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -652,7 +688,11 @@ impl Fmt for i16 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i32 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -671,7 +711,11 @@ impl Fmt for i32 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i64 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -690,7 +734,11 @@ impl Fmt for i64 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i128 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -709,7 +757,11 @@ impl Fmt for i128 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for isize {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -722,7 +774,11 @@ impl Fmt for isize {
 /// This instance has no special flags.
 /// Common options are recognised.
 impl<'a> Fmt for &'a str {
-    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              _flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.to_string();
@@ -734,7 +790,11 @@ impl<'a> Fmt for &'a str {
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for String {
-    fn format(&self, _args: &[String], _flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              _flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = self.clone();
@@ -752,7 +812,11 @@ impl Fmt for String {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u8 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -773,7 +837,11 @@ impl Fmt for u8 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u16 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -794,7 +862,11 @@ impl Fmt for u16 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u32 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -815,7 +887,11 @@ impl Fmt for u32 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u64 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -836,7 +912,11 @@ impl Fmt for u64 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u128 {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -857,7 +937,11 @@ impl Fmt for u128 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for usize {
-    fn format(&self, _args: &[String], flags: &[char], options: &HashMap<String, String>)
+    fn format(&self,
+              _name: &[String],
+              _args: &[String],
+              flags: &[char],
+              options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
             let mut s = util::int_to_str(*self, flags, options)?;
@@ -1111,6 +1195,77 @@ mod fmt_tests {
             table.insert("s", &string);
             let s = table.format("{s::truncate=r5}").unwrap();
             assert_that!(&s.as_str(), eq("12345"));
+        }
+
+    }
+
+    test_suite! {
+        name nested_fmts;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+        use {BoxOrRef, FormatTable, Fmt, SingleFmtError, util};
+
+        struct Point {
+            x: i32,
+            y: i32
+        }
+
+        struct Line {
+            start: Point,
+            end: Point
+        }
+
+        impl Fmt for Point {
+            fn format(&self,
+                      name: &[String],
+                      _args: &[String],
+                      _flags: &[char],
+                      _options: &HashMap<String, String>)
+                -> Result<String, SingleFmtError>
+                {
+                    Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(name)))
+                }
+            fn get_subfmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+                println!("name is '{}'", name);
+                if name == "x" {
+                    Some(BoxOrRef::Ref(&self.x))
+                } else if name == "y" {
+                    Some(BoxOrRef::Ref(&self.y))
+                } else {
+                    None
+                }
+            }
+        }
+
+        impl Fmt for Line {
+            fn format(&self,
+                      name: &[String],
+                      _args: &[String],
+                      _flags: &[char],
+                      _options: &HashMap<String, String>)
+                -> Result<String, SingleFmtError>
+                {
+                    Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(name)))
+                }
+            fn get_subfmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+                if name == "start" || name == "a" {
+                    Some(BoxOrRef::Ref(&self.start))
+                } else if name == "end" || name == "b" {
+                    Some(BoxOrRef::Ref(&self.end))
+                } else {
+                    None
+                }
+            }
+        }
+
+        test single_nested() {
+            let a = Point { x: 0, y: 0 };
+            let b = Point { x: 2, y: 10 };
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("a", &a);
+            table.insert("b", &b);
+            let s = table.format("{a.x}, {b.y}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("0, 10"));
         }
 
     }
