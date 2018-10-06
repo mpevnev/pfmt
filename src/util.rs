@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::iter::{repeat};
+use std::iter::repeat;
 use std::string::ToString;
 
 use num;
@@ -12,27 +12,33 @@ use {SingleFmtError, SingleFmtError::*};
 pub enum Justification {
     Left(),
     Center(),
-    Right()
+    Right(),
 }
 
-pub fn apply_common_options(s: &mut String, options: &HashMap<String, String>)
-    -> Result<(), SingleFmtError>
-{
+pub fn apply_common_options(
+    s: &mut String,
+    options: &HashMap<String, String>,
+) -> Result<(), SingleFmtError> {
     apply_truncation(s, options)?;
     apply_width(s, options)?;
     Ok(())
 }
 
-pub fn apply_width(s: &mut String, options: &HashMap<String, String>)
-    -> Result<(), SingleFmtError>
-{
+pub fn apply_width(
+    s: &mut String,
+    options: &HashMap<String, String>,
+) -> Result<(), SingleFmtError> {
     if let Some(width_str) = options.get("width") {
         let justification = match width_str.chars().nth(0) {
             Some('l') => Justification::Left(),
             Some('c') => Justification::Center(),
             Some('r') => Justification::Right(),
-            _ => return Err(SingleFmtError::InvalidOptionValue("width".to_string(), 
-                width_str.to_string()))
+            _ => {
+                return Err(SingleFmtError::InvalidOptionValue(
+                    "width".to_string(),
+                    width_str.to_string(),
+                ))
+            }
         };
         if let Ok(width) = width_str[1..].parse::<usize>() {
             let len = s.chars().count();
@@ -58,24 +64,35 @@ pub fn apply_width(s: &mut String, options: &HashMap<String, String>)
                 }
             }
         } else {
-            return Err(InvalidOptionValue("width".to_string(),
-                width_str.to_string()));
+            return Err(InvalidOptionValue(
+                "width".to_string(),
+                width_str.to_string(),
+            ));
         }
     }
     Ok(())
 }
 
-pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
-    -> Result<(), SingleFmtError>
-{
+pub fn apply_truncation(
+    s: &mut String,
+    options: &HashMap<String, String>,
+) -> Result<(), SingleFmtError> {
     if let Some(opt_str) = options.get("truncate") {
         if opt_str.is_empty() {
-            return Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()));
+            return Err(InvalidOptionValue(
+                "truncate".to_string(),
+                opt_str.to_string(),
+            ));
         }
         let is_left = match opt_str.chars().nth(0) {
             Some('l') => true,
             Some('r') => false,
-            _ => return Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()))
+            _ => {
+                return Err(InvalidOptionValue(
+                    "truncate".to_string(),
+                    opt_str.to_string(),
+                ))
+            }
         };
         if let Ok(truncate_to_width) = opt_str[1..].parse::<usize>() {
             let len = s.chars().count();
@@ -89,7 +106,10 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
             }
             Ok(())
         } else {
-            Err(InvalidOptionValue("truncate".to_string(), opt_str.to_string()))
+            Err(InvalidOptionValue(
+                "truncate".to_string(),
+                opt_str.to_string(),
+            ))
         }
     } else {
         Ok(())
@@ -102,15 +122,15 @@ pub fn apply_truncation(s: &mut String, options: &HashMap<String, String>)
 pub enum Rounding {
     Down(),
     Nearest(),
-    Up()
+    Up(),
 }
 
-pub fn float_to_exp<T>(f: T, options: &HashMap<String, String>)
-    -> Result<String, SingleFmtError>
-    where T: num::Float + num::FromPrimitive + Copy + ToString
+pub fn float_to_exp<T>(f: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+where
+    T: num::Float + num::FromPrimitive + Copy + ToString,
 {
     if f.is_nan() || f.is_infinite() {
-        return Ok(f.to_string())
+        return Ok(f.to_string());
     }
     let mut abs = f.abs();
     let ten = T::from_i32(10).unwrap();
@@ -130,22 +150,22 @@ pub fn float_to_exp<T>(f: T, options: &HashMap<String, String>)
         abs = match get_rounding(options)? {
             Some(Rounding::Up()) => abs.ceil(),
             Some(Rounding::Down()) => abs.floor(),
-            Some(Rounding::Nearest()) | None => abs.round()
+            Some(Rounding::Nearest()) | None => abs.round(),
         };
         abs = abs / mult;
     }
     let abs = abs.to_string();
     let power = p.to_string();
     let mut res = String::with_capacity(abs.len() + power.len() + 2);
-    res += &abs; 
+    res += &abs;
     res += "e";
     res += &power;
     Ok(res)
 }
 
-pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
-    -> Result<String, SingleFmtError> 
-    where T: num::Float + num::FromPrimitive + Copy + ToString
+pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+where
+    T: num::Float + num::FromPrimitive + Copy + ToString,
 {
     if f.is_nan() || f.is_infinite() {
         return Ok(f.to_string());
@@ -157,16 +177,20 @@ pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>)
         f = match get_rounding(options)? {
             Some(Rounding::Up()) => f.ceil(),
             Some(Rounding::Down()) => f.floor(),
-            Some(Rounding::Nearest()) | None => f.round()
+            Some(Rounding::Nearest()) | None => f.round(),
         };
         f = f / mult;
     }
     Ok(f.to_string())
 }
 
-pub fn int_to_str<T>(i: T, flags: &[char], options: &HashMap<String, String>)
-    -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + ToString + Copy
+pub fn int_to_str<T>(
+    i: T,
+    flags: &[char],
+    options: &HashMap<String, String>,
+) -> Result<String, SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::ToPrimitive + ToString + Copy,
 {
     let prefix = flags.contains(&'p');
     if flags.contains(&'b') {
@@ -180,9 +204,9 @@ pub fn int_to_str<T>(i: T, flags: &[char], options: &HashMap<String, String>)
     }
 }
 
-pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char]) 
-    -> Result<(), SingleFmtError>
-    where T: num::Signed
+pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char]) -> Result<(), SingleFmtError>
+where
+    T: num::Signed,
 {
     if signed.is_negative() {
         s.insert(0, '-');
@@ -195,8 +219,7 @@ pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char])
 /* ---------- misc ---------- */
 
 pub fn join_name(name: &[String]) -> String {
-    let mut res = String::with_capacity(name.len() 
-                                        + name.iter().fold(0, |acc, s| acc + s.len()));
+    let mut res = String::with_capacity(name.len() + name.iter().fold(0, |acc, s| acc + s.len()));
     let mut iter = name.iter();
     if let Some(s) = iter.next() {
         res.push_str(&s);
@@ -210,23 +233,25 @@ pub fn join_name(name: &[String]) -> String {
 
 /* ---------- helpers ---------- */
 
-fn get_precision(options: &HashMap<String, String>)
-    -> Result<Option<i32>, SingleFmtError>
-{
+fn get_precision(options: &HashMap<String, String>) -> Result<Option<i32>, SingleFmtError> {
     if let Some(s) = options.get("prec") {
         if let Ok(i) = s.parse::<i32>() {
             Ok(Some(i))
         } else {
             Err(InvalidOptionValue("prec".to_string(), s.to_string()))
-        } 
+        }
     } else {
         Ok(None)
     }
 }
 
-fn present_binary<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
-    -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+fn present_binary<T>(
+    i: T,
+    prefix: bool,
+    options: &HashMap<String, String>,
+) -> Result<String, SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let two = T::from_i32(2).unwrap();
@@ -244,9 +269,13 @@ fn present_binary<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     Ok(chars.iter().rev().collect())
 }
 
-fn present_octal<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
-    -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+fn present_octal<T>(
+    i: T,
+    prefix: bool,
+    options: &HashMap<String, String>,
+) -> Result<String, SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
 {
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
@@ -264,9 +293,13 @@ fn present_octal<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     Ok(chars.iter().rev().collect())
 }
 
-fn present_hexadecimal<T>(i: T, prefix: bool, options: &HashMap<String, String>) 
-    -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy
+fn present_hexadecimal<T>(
+    i: T,
+    prefix: bool,
+    options: &HashMap<String, String>,
+) -> Result<String, SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
 {
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
@@ -289,9 +322,9 @@ fn present_hexadecimal<T>(i: T, prefix: bool, options: &HashMap<String, String>)
     Ok(chars.iter().rev().collect())
 }
 
-fn present_decimal<T>(i: T, options: &HashMap<String, String>)
-    -> Result<String, SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy
+fn present_decimal<T>(i: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy,
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let ten = T::from_i32(10).unwrap();
@@ -299,9 +332,7 @@ fn present_decimal<T>(i: T, options: &HashMap<String, String>)
     Ok(i.to_string())
 }
 
-fn get_rounding(options: &HashMap<String, String>)
-    -> Result<Option<Rounding>, SingleFmtError>
-{
+fn get_rounding(options: &HashMap<String, String>) -> Result<Option<Rounding>, SingleFmtError> {
     if let Some(s) = options.get("round") {
         if s == "up" {
             Ok(Some(Rounding::Up()))
@@ -318,8 +349,9 @@ fn get_rounding(options: &HashMap<String, String>)
 }
 
 fn ipow<T, P>(i: T, p: P) -> T
-    where T: num::Integer + num::Zero + num::One + Copy,
-          P: num::Integer + num::Zero + num::One + Copy
+where
+    T: num::Integer + num::Zero + num::One + Copy,
+    P: num::Integer + num::Zero + num::One + Copy,
 {
     let mut res = T::one();
     let mut p = p;
@@ -330,9 +362,13 @@ fn ipow<T, P>(i: T, p: P) -> T
     res
 }
 
-fn apply_integer_rounding<T>(i: &mut T, base: T, options: &HashMap<String, String>)
-    -> Result<(), SingleFmtError>
-    where T: num::Integer + num::FromPrimitive + num::Zero + num::One + Copy
+fn apply_integer_rounding<T>(
+    i: &mut T,
+    base: T,
+    options: &HashMap<String, String>,
+) -> Result<(), SingleFmtError>
+where
+    T: num::Integer + num::FromPrimitive + num::Zero + num::One + Copy,
 {
     if let Some(prec) = get_precision(options)? {
         if prec >= 0 {
@@ -349,10 +385,10 @@ fn apply_integer_rounding<T>(i: &mut T, base: T, options: &HashMap<String, Strin
                 } else {
                     *i = quot * div;
                 }
-            },
+            }
             Some(Rounding::Down()) => {
                 *i = quot * div;
-            },
+            }
             Some(Rounding::Nearest()) | None => {
                 if rem >= div / two {
                     *i = (quot + T::one()) * div;

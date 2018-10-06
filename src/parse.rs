@@ -12,7 +12,7 @@ const MAX_RECURSION_DEPTH: u8 = 100;
 #[derive(Debug, PartialEq)]
 pub enum Piece {
     Literal(String),
-    Placeholder(Vec<String>, Vec<Piece>, Vec<char>, HashMap<String, Piece>)
+    Placeholder(Vec<String>, Vec<Piece>, Vec<char>, HashMap<String, Piece>),
 }
 
 /// Errors that occur during parsing a format string.
@@ -20,7 +20,7 @@ pub enum Piece {
 pub enum ParseError {
     EmptyNameSegment(String),
     UnterminatedArgumentList(String),
-    UnterminatedPlaceholder(String)
+    UnterminatedPlaceholder(String),
 }
 
 pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
@@ -34,13 +34,15 @@ pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
     Ok(res)
 }
 
-fn parse_piece(input: &str, recursion_depth: u8, new_arglist: bool) 
-    -> Result<(Piece, &str), ParseError> 
-{
+fn parse_piece(
+    input: &str,
+    recursion_depth: u8,
+    new_arglist: bool,
+) -> Result<(Piece, &str), ParseError> {
     let mut iter = input.chars();
     match iter.next() {
         Some(OPENING_BRACKET) => parse_placeholder(input, recursion_depth),
-        _ => parse_literal(input, new_arglist)
+        _ => parse_literal(input, new_arglist),
     }
 }
 
@@ -80,9 +82,7 @@ fn parse_literal(input: &str, new_arglist: bool) -> Result<(Piece, &str), ParseE
     Ok((Piece::Literal(literal), ""))
 }
 
-fn parse_placeholder(input: &str, recursion_depth: u8) 
-    -> Result<(Piece, &str), ParseError> 
-{
+fn parse_placeholder(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
     if recursion_depth > MAX_RECURSION_DEPTH {
         return grab_until_terminator(input);
     }
@@ -96,9 +96,10 @@ fn parse_placeholder(input: &str, recursion_depth: u8)
     Ok((Piece::Placeholder(name, arguments, flags, options), input))
 }
 
-fn extract_name<'a, 'b>(orig_input: &'a str, input: &'b str) 
-    -> Result<(Vec<String>, &'b str), ParseError>
-{
+fn extract_name<'a, 'b>(
+    orig_input: &'a str,
+    input: &'b str,
+) -> Result<(Vec<String>, &'b str), ParseError> {
     let mut name = Vec::new();
     let mut segment = String::new();
     let mut prev = None;
@@ -132,15 +133,20 @@ fn extract_name<'a, 'b>(orig_input: &'a str, input: &'b str)
     Err(ParseError::UnterminatedPlaceholder(orig_input.to_string()))
 }
 
-fn extract_arguments<'a, 'b>(first_input: &'a str, input: &'b str, recursion_depth: u8) 
-    -> Result<(Vec<Piece>, &'b str), ParseError>
-{
+fn extract_arguments<'a, 'b>(
+    first_input: &'a str,
+    input: &'b str,
+    recursion_depth: u8,
+) -> Result<(Vec<Piece>, &'b str), ParseError> {
     let mut iter = input.char_indices();
     match iter.next() {
         Some((_, OPENING_BRACKET)) => (),
         Some((_, FIELD_SEPARATOR)) => return Ok((Vec::new(), input)),
         Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
-        _ => panic!("Somehow dead code in 'extract_arguments' was reached on input: '{}'", input),
+        _ => panic!(
+            "Somehow dead code in 'extract_arguments' was reached on input: '{}'",
+            input
+        ),
     }
     let mut input = &input[1..];
     let mut args = Vec::new();
@@ -151,18 +157,23 @@ fn extract_arguments<'a, 'b>(first_input: &'a str, input: &'b str, recursion_dep
         args.push(piece);
         input = rest;
         if input.is_empty() {
-            return Err(ParseError::UnterminatedArgumentList(first_input.to_string()));
+            return Err(ParseError::UnterminatedArgumentList(
+                first_input.to_string(),
+            ));
         }
     }
     Ok((args, &input[1..]))
 }
 
-fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str) 
-    -> Result<(Vec<char>, &'b str), ParseError>
-{
+fn extract_flags<'a, 'b>(
+    full_input: &'a str,
+    input: &'b str,
+) -> Result<(Vec<char>, &'b str), ParseError> {
     let mut iter = input.char_indices().peekable();
     match iter.peek() {
-        Some((_, FIELD_SEPARATOR)) => { iter.next(); },
+        Some((_, FIELD_SEPARATOR)) => {
+            iter.next();
+        }
         Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
         Some(_) => (),
         None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
@@ -194,15 +205,20 @@ fn extract_flags<'a, 'b>(full_input: &'a str, input: &'b str)
     }
 }
 
-fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth: u8) 
-    -> Result<(HashMap<String, Piece>, &'b str), ParseError>
-{
+fn extract_options<'a, 'b>(
+    full_input: &'a str,
+    input: &'b str,
+    recursion_depth: u8,
+) -> Result<(HashMap<String, Piece>, &'b str), ParseError> {
     let mut iter = input.char_indices();
     match iter.next() {
         Some((_, FIELD_SEPARATOR)) => (),
         Some((_, CLOSING_BRACKET)) => return Ok((HashMap::new(), input)),
         None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
-        _ => panic!("Reached dead code in 'extract_options' on input '{}'", full_input)
+        _ => panic!(
+            "Reached dead code in 'extract_options' on input '{}'",
+            full_input
+        ),
     }
     let mut res: HashMap<String, Piece> = HashMap::new();
     let mut prev = None;
@@ -225,7 +241,7 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
             continue;
         } else if ch == SETOPT && prev != Some(ESCAPE) {
             name = trim_name(full_input, &name)?;
-            let (opt, rest) = parse_piece(&input[i + 1 ..], recursion_depth + 1, false)?;
+            let (opt, rest) = parse_piece(&input[i + 1..], recursion_depth + 1, false)?;
             res.insert(name, opt);
             iter = rest.char_indices();
             input = rest;
@@ -236,7 +252,7 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
             prev = None;
         } else if ch == ESCAPE && prev != Some(ESCAPE) {
             prev = Some(ch);
-        }  else {
+        } else {
             name.push(ch);
             prev = Some(ch);
         }
@@ -247,12 +263,13 @@ fn extract_options<'a, 'b>(full_input: &'a str, input: &'b str, recursion_depth:
     Ok((res, &input[end..]))
 }
 
-fn extract_placeholder_terminator<'a, 'b>(full_input: &'a str, input: &'b str) 
-    -> Result<&'b str, ParseError>
-{
+fn extract_placeholder_terminator<'a, 'b>(
+    full_input: &'a str,
+    input: &'b str,
+) -> Result<&'b str, ParseError> {
     match input.chars().next() {
         Some(CLOSING_BRACKET) => Ok(&input[1..]),
-        _ => Err(ParseError::UnterminatedPlaceholder(full_input.to_string()))
+        _ => Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
     }
 }
 
@@ -277,7 +294,7 @@ fn grab_until_terminator(input: &str) -> Result<(Piece, &str), ParseError> {
             prev = Some(ch);
         }
         if balance == 0 {
-            return Ok((Piece::Literal(literal), &input[i + 1 ..]));
+            return Ok((Piece::Literal(literal), &input[i + 1..]));
         }
     }
     Err(ParseError::UnterminatedPlaceholder(input.to_string()))
@@ -291,7 +308,7 @@ fn trim_name(global_source: &str, name: &str) -> Result<String, ParseError> {
         Ok(res)
     }
 }
-                    
+
 #[cfg(test)]
 mod tests {
     test_suite! {
@@ -436,7 +453,7 @@ mod tests {
                                         m
                                     })));
         }
-                                                
+
     }
 
     test_suite! {
@@ -501,7 +518,7 @@ mod tests {
             let piece = &pieces[0];
             assert_that!(&piece, has_structure!(
                     Placeholder [
-                        any_value(), 
+                        any_value(),
                         eq(vec![Literal("asdf".to_string())]),
                         any_value(),
                         any_value()

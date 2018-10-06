@@ -1,4 +1,4 @@
-/*! 
+/*!
  * # Overview
  * This library provides a flexible and powerful method to format data. At the
  * heart of the library lie two traits: `Fmt`, for things that are formattable,
@@ -26,7 +26,7 @@
  * Most `Fmt`s support flags that can change the output of the formatting
  * procedure, for instance floats can request to be printed in exponential
  * notation. Flags are just single characters and are separated from the
- * identifier with a colon: `"{foobar:flags}"`. A trailing colon is allowed. 
+ * identifier with a colon: `"{foobar:flags}"`. A trailing colon is allowed.
  * Some `Fmt`s also support options, which are specified after the flags (and
  * if you want to use options, you need a flags section, even if it's empty)
  * and are separated by colons: `"{foobar::option1=value1:option2=value2}"`.
@@ -100,7 +100,7 @@
  * ```
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
- * 
+ *
  * let mut table: HashMap<String, Box<Fmt>> = HashMap::new();
  * table.insert("a".to_string(), Box::new(2) as Box<Fmt>);
  * table.insert("b".to_string(), Box::new("foobar".to_string()) as Box<Fmt>);
@@ -127,7 +127,7 @@
  *
  * ## `truncate`: `{'l', 'r'} + non-negative integer`
  * Controls truncation of the field. If begins with `l`, left part of the
- * field that doesn't fit is truncated, if begins with `r` - the right part is 
+ * field that doesn't fit is truncated, if begins with `r` - the right part is
  * removed instead. Note that `"l0"` is not actually forbidden, just very
  * useless.
  *
@@ -171,7 +171,7 @@
  * the `get_fmt` method a bit differently:
  * ```
  * use pfmt::{Fmt, FormatTable, BoxOrRef};
- * 
+ *
  * struct Producer { }
  *
  * impl FormatTable for Producer {
@@ -200,7 +200,7 @@
  * ```
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
- * 
+ *
  * let i1 = 10;
  * let i2 = 100;
  * let j = 2;
@@ -214,8 +214,12 @@
  * ```
  */
 
-#[cfg(test)] #[macro_use] extern crate galvanic_assert;
-#[cfg(test)] #[macro_use] extern crate galvanic_test;
+#[cfg(test)]
+#[macro_use]
+extern crate galvanic_assert;
+#[cfg(test)]
+#[macro_use]
+extern crate galvanic_test;
 
 extern crate num;
 
@@ -223,7 +227,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use parse::{parse, Piece, ParseError};
+use parse::{parse, ParseError, Piece};
 
 mod parse;
 
@@ -234,13 +238,14 @@ pub mod util;
 /// This trait drives the formatting of a single placeholder. Placeholder's
 /// arguments, flags and options are passed to the `format` method.
 pub trait Fmt {
-    fn format(&self, 
-              full_name: &[String],
-              name: &[String],
-              args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>;
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError>;
 }
 
 pub trait FormatTable {
@@ -256,9 +261,10 @@ pub trait FormatTable {
     }
 }
 
-fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece) 
-    -> Result<String, FormattingError> 
-{
+fn format_one<'a, 'b, T: FormatTable + ?Sized>(
+    table: &'a T,
+    piece: &'b Piece,
+) -> Result<String, FormattingError> {
     match piece {
         Piece::Literal(s) => Ok(s.clone()),
         Piece::Placeholder(name, args, flags, opts) => {
@@ -283,7 +289,7 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece)
 
 pub enum BoxOrRef<'a, T: ?Sized + 'a> {
     Boxed(Box<T>),
-    Ref(&'a T)
+    Ref(&'a T),
 }
 
 impl<'a, T: ?Sized + 'a> Deref for BoxOrRef<'a, T> {
@@ -291,7 +297,7 @@ impl<'a, T: ?Sized + 'a> Deref for BoxOrRef<'a, T> {
     fn deref(&self) -> &T {
         match self {
             BoxOrRef::Boxed(b) => &b,
-            BoxOrRef::Ref(r) => r
+            BoxOrRef::Ref(r) => r,
         }
     }
 }
@@ -300,7 +306,7 @@ impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
     fn borrow(&self) -> &T {
         match self {
             BoxOrRef::Boxed(b) => b.borrow(),
-            BoxOrRef::Ref(r) => r
+            BoxOrRef::Ref(r) => r,
         }
     }
 }
@@ -323,7 +329,7 @@ pub enum SingleFmtError {
     /// this. Contains a pair of erroneous option's name and value.
     InvalidOptionValue(String, String),
     /// Returned when a `Fmt` that is only used as a container to hold/produce
-    /// other `Fmt`s via the dot access syntax is used directly. Contains the 
+    /// other `Fmt`s via the dot access syntax is used directly. Contains the
     /// full path to the format unit used in such fashion.
     NamespaceOnlyFmt(String),
     /// Returned when a `Fmt`does not contain a requested sub-`Fmt`. Contains
@@ -356,7 +362,7 @@ pub enum FormattingError {
     // General errors.
     /// Returned if the table could neither find nor produce a `Fmt` with the
     /// given name (contained as the only field).
-    UnknownFmt(String)
+    UnknownFmt(String),
 }
 
 impl From<SingleFmtError> for FormattingError {
@@ -364,8 +370,9 @@ impl From<SingleFmtError> for FormattingError {
         match err {
             SingleFmtError::UnknownFlag(c) => FormattingError::UnknownFlag(c),
             SingleFmtError::UnknownOption(s) => FormattingError::UnknownOption(s),
-            SingleFmtError::InvalidOptionValue(opt, val) =>
-                FormattingError::InvalidOptionValue(opt, val),
+            SingleFmtError::InvalidOptionValue(opt, val) => {
+                FormattingError::InvalidOptionValue(opt, val)
+            }
             SingleFmtError::NamespaceOnlyFmt(s) => FormattingError::NamespaceOnlyFmt(s),
             SingleFmtError::UnknownSubfmt(s) => FormattingError::UnknownFmt(s),
         }
@@ -376,10 +383,8 @@ impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
         match err {
             ParseError::EmptyNameSegment(s) => FormattingError::EmptyName(s),
-            ParseError::UnterminatedArgumentList(s) =>
-                FormattingError::UnterminatedArgumentList(s),
-            ParseError::UnterminatedPlaceholder(s) =>
-                FormattingError::UnterminatedPlaceholder(s)
+            ParseError::UnterminatedArgumentList(s) => FormattingError::UnterminatedArgumentList(s),
+            ParseError::UnterminatedPlaceholder(s) => FormattingError::UnterminatedPlaceholder(s),
         }
     }
 }
@@ -387,16 +392,16 @@ impl From<ParseError> for FormattingError {
 /* ---------- key implementations ---------- */
 
 impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            self.borrow().format(full_name, name, args, flags, options)
-        }
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        self.borrow().format(full_name, name, args, flags, options)
+    }
 }
 
 impl<'a, T: FormatTable> FormatTable for &'a T {
@@ -433,36 +438,40 @@ impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
     }
 }
 
-impl<A, B> FormatTable for (A, B) 
-    where A: FormatTable,
-          B: FormatTable
+impl<A, B> FormatTable for (A, B)
+where
+    A: FormatTable,
+    B: FormatTable,
 {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name)
-            .or_else(|| self.1.get_fmt(name))
+        self.0.get_fmt(name).or_else(|| self.1.get_fmt(name))
     }
 }
 
 impl<A, B, C> FormatTable for (A, B, C)
-    where A: FormatTable,
-          B: FormatTable,
-          C: FormatTable
+where
+    A: FormatTable,
+    B: FormatTable,
+    C: FormatTable,
 {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name)
+        self.0
+            .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
     }
 }
 
 impl<A, B, C, D> FormatTable for (A, B, C, D)
-    where A: FormatTable,
-          B: FormatTable,
-          C: FormatTable,
-          D: FormatTable
+where
+    A: FormatTable,
+    B: FormatTable,
+    C: FormatTable,
+    D: FormatTable,
 {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name)
+        self.0
+            .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
@@ -470,14 +479,16 @@ impl<A, B, C, D> FormatTable for (A, B, C, D)
 }
 
 impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
-    where A: FormatTable,
-          B: FormatTable,
-          C: FormatTable,
-          D: FormatTable,
-          E: FormatTable
+where
+    A: FormatTable,
+    B: FormatTable,
+    C: FormatTable,
+    D: FormatTable,
+    E: FormatTable,
 {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name)
+        self.0
+            .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
@@ -486,15 +497,17 @@ impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
 }
 
 impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
-    where A: FormatTable,
-          B: FormatTable,
-          C: FormatTable,
-          D: FormatTable,
-          E: FormatTable,
-          F: FormatTable
+where
+    A: FormatTable,
+    B: FormatTable,
+    C: FormatTable,
+    D: FormatTable,
+    E: FormatTable,
+    F: FormatTable,
 {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name)
+        self.0
+            .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
             .or_else(|| self.2.get_fmt(name))
             .or_else(|| self.3.get_fmt(name))
@@ -510,57 +523,57 @@ impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
 /// * `Y`, which changes the output to Y/N.
 /// Common options are recognised.
 impl Fmt for bool {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut res = if *self {
-                if flags.contains(&'y') {
-                    "yes".to_string()
-                } else if flags.contains(&'Y') {
-                    "Y".to_string()
-                } else {
-                    "true".to_string()
-                }
-            } else {
-                if flags.contains(&'y') {
-                    "no".to_string()
-                } else if flags.contains(&'Y') {
-                    "N".to_string()
-                } else {
-                    "false".to_string()
-                }
-            };
-            util::apply_common_options(&mut res, options)?;
-            Ok(res)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut res = if *self {
+            if flags.contains(&'y') {
+                "yes".to_string()
+            } else if flags.contains(&'Y') {
+                "Y".to_string()
+            } else {
+                "true".to_string()
+            }
+        } else {
+            if flags.contains(&'y') {
+                "no".to_string()
+            } else if flags.contains(&'Y') {
+                "N".to_string()
+            } else {
+                "false".to_string()
+            }
+        };
+        util::apply_common_options(&mut res, options)?;
+        Ok(res)
+    }
 }
 
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for char {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              _flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = self.to_string();
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        _flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = self.to_string();
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -570,27 +583,27 @@ impl Fmt for char {
 /// Common options are recognised.
 /// Common numeric options are also recognised.
 impl Fmt for f32 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut res: String;
-            if flags.contains(&'e') {
-                res = util::float_to_exp(*self, options)?;
-            } else {
-                res = util::float_to_normal(*self, options)?;
-            }
-            util::add_sign(&mut res, *self, flags)?;
-            util::apply_common_options(&mut res, options)?;
-            Ok(res)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut res: String;
+        if flags.contains(&'e') {
+            res = util::float_to_exp(*self, options)?;
+        } else {
+            res = util::float_to_normal(*self, options)?;
+        }
+        util::add_sign(&mut res, *self, flags)?;
+        util::apply_common_options(&mut res, options)?;
+        Ok(res)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -599,27 +612,27 @@ impl Fmt for f32 {
 /// Common options are recognized.
 /// Common numeric options are also recognized.
 impl Fmt for f64 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut res: String;
-            if flags.contains(&'e') {
-                res = util::float_to_exp(*self, options)?;
-            } else {
-                res = util::float_to_normal(*self, options)?;
-            }
-            util::add_sign(&mut res, *self, flags)?;
-            util::apply_common_options(&mut res, options)?;
-            Ok(res)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut res: String;
+        if flags.contains(&'e') {
+            res = util::float_to_exp(*self, options)?;
+        } else {
+            res = util::float_to_normal(*self, options)?;
+        }
+        util::add_sign(&mut res, *self, flags)?;
+        util::apply_common_options(&mut res, options)?;
+        Ok(res)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -631,22 +644,22 @@ impl Fmt for f64 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i8 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -658,22 +671,22 @@ impl Fmt for i8 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i16 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -685,22 +698,22 @@ impl Fmt for i16 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i32 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -712,22 +725,22 @@ impl Fmt for i32 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i64 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -739,22 +752,22 @@ impl Fmt for i64 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for i128 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -766,62 +779,62 @@ impl Fmt for i128 {
 /// * `x`, which makes output hexadecimal;
 /// Common and common numeric options are recognized.
 impl Fmt for isize {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            util::add_sign(&mut s, *self, flags)?;
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        util::add_sign(&mut s, *self, flags)?;
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance has no special flags.
 /// Common options are recognised.
 impl<'a> Fmt for &'a str {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              _flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = self.to_string();
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        _flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = self.to_string();
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance has no special flags.
 /// Common options are recognised.
 impl Fmt for String {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              _flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = self.clone();
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        _flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = self.clone();
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -833,24 +846,24 @@ impl Fmt for String {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u8 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -862,24 +875,24 @@ impl Fmt for u8 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u16 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -891,24 +904,24 @@ impl Fmt for u16 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u32 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -920,24 +933,24 @@ impl Fmt for u32 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u64 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -949,24 +962,24 @@ impl Fmt for u64 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for u128 {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /// This instance is aware of the following flags:
@@ -978,24 +991,24 @@ impl Fmt for u128 {
 /// * `x`, which makes the output hexadecimal.
 /// Common and common numeric options are recognised.
 impl Fmt for usize {
-    fn format(&self,
-              full_name: &[String],
-              name: &[String],
-              _args: &[String],
-              flags: &[char],
-              options: &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
-        {
-            if !name.is_empty() {
-                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
-            }
-            let mut s = util::int_to_str(*self, flags, options)?;
-            if flags.contains(&'+') {
-                s.insert(0, '+');
-            }
-            util::apply_common_options(&mut s, options)?;
-            Ok(s)
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        if !name.is_empty() {
+            return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
+        let mut s = util::int_to_str(*self, flags, options)?;
+        if flags.contains(&'+') {
+            s.insert(0, '+');
+        }
+        util::apply_common_options(&mut s, options)?;
+        Ok(s)
+    }
 }
 
 /* ---------- tests for Fmts ---------- */
@@ -1233,7 +1246,7 @@ mod fmt_tests {
             let s = table.format("{s::truncate=l5}").unwrap();
             assert_that!(&s.as_str(), eq("67890"));
         }
-        
+
         test truncate_right() {
             let string = "1234567890";
             let mut table: HashMap<&str, &Fmt> = HashMap::new();
