@@ -235,15 +235,12 @@ pub mod util;
 /// arguments, flags and options are passed to the `format` method.
 pub trait Fmt {
     fn format(&self, 
+              full_name: &[String],
               name: &[String],
               args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>;
-
-    fn get_subfmt<'a, 'b>(&'a self, _name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        None
-    }
 }
 
 pub trait FormatTable {
@@ -265,13 +262,6 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece)
     match piece {
         Piece::Literal(s) => Ok(s.clone()),
         Piece::Placeholder(name, args, flags, opts) => {
-            /*
-            if let Some(fmt) = resolve_name(table, &name).last() {
-                format_unwrapped(table, fmt, args, flags, opts)
-            } else {
-                Err(FormattingError::UnknownFmt(util::join_name(&name)))
-            }
-            */
             if let Some(root) = table.get_fmt(&name[0]) {
                 let mut processed_args = Vec::with_capacity(args.len());
                 for arg in args.iter() {
@@ -281,32 +271,10 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(table: &'a T, piece: &'b Piece)
                 for (key, piece) in opts.iter() {
                     processed_opts.insert(key.clone(), format_one(table, piece)?);
                 }
-                follow_name(name, &name[1..], &root, &processed_args, flags, &processed_opts)
+                Ok(root.format(name, &name[1..], &processed_args, flags, &processed_opts)?)
             } else {
                 Err(FormattingError::UnknownFmt(util::join_name(&name)))
             }
-        }
-    }
-}
-
-/* ---------- name resolution ---------- */
-
-fn follow_name(
-    full_name: &[String],
-    name: &[String],
-    fmt: &Fmt,
-    args: &[String],
-    flags: &[char],
-    options: &HashMap<String, String>)
-    -> Result<String, FormattingError>
-{
-    if name.is_empty() {
-        Ok(fmt.format(full_name, args, flags, options)?)
-    } else {
-        if let Some(next) = fmt.get_subfmt(&name[0]) {
-            follow_name(full_name, &name[1..], &next, args, flags, options)
-        } else {
-            Err(FormattingError::UnknownFmt(util::join_name(&full_name)))
         }
     }
 }
@@ -354,10 +322,13 @@ pub enum SingleFmtError {
     /// invalid value (stored in the second field). Standard types *do* use
     /// this. Contains a pair of erroneous option's name and value.
     InvalidOptionValue(String, String),
-    /// Returned when a 'Fmt' that is only used as a container to hold/produce
+    /// Returned when a `Fmt` that is only used as a container to hold/produce
     /// other `Fmt`s via the dot access syntax is used directly. Contains the 
-    /// path to the format unit used in such fashion.
-    NamespaceOnlyFmt(String)
+    /// full path to the format unit used in such fashion.
+    NamespaceOnlyFmt(String),
+    /// Returned when a `Fmt`does not contain a requested sub-`Fmt`. Contains
+    /// the full path to the child format unit.
+    UnknownSubfmt(String),
 }
 
 /// Any error that can happen during formatting.
@@ -395,7 +366,8 @@ impl From<SingleFmtError> for FormattingError {
             SingleFmtError::UnknownOption(s) => FormattingError::UnknownOption(s),
             SingleFmtError::InvalidOptionValue(opt, val) =>
                 FormattingError::InvalidOptionValue(opt, val),
-            SingleFmtError::NamespaceOnlyFmt(s) => FormattingError::NamespaceOnlyFmt(s)
+            SingleFmtError::NamespaceOnlyFmt(s) => FormattingError::NamespaceOnlyFmt(s),
+            SingleFmtError::UnknownSubfmt(s) => FormattingError::UnknownFmt(s),
         }
     }
 }
@@ -416,13 +388,14 @@ impl From<ParseError> for FormattingError {
 
 impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
     fn format(&self,
+              full_name: &[String],
               name: &[String],
               args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
-            self.borrow().format(name, args, flags, options)
+            self.borrow().format(full_name, name, args, flags, options)
         }
 }
 
@@ -538,12 +511,16 @@ impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
 /// Common options are recognised.
 impl Fmt for bool {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut res = if *self {
                 if flags.contains(&'y') {
                     "yes".to_string()
@@ -570,12 +547,16 @@ impl Fmt for bool {
 /// Common options are recognised.
 impl Fmt for char {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               _flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = self.to_string();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
@@ -590,12 +571,16 @@ impl Fmt for char {
 /// Common numeric options are also recognised.
 impl Fmt for f32 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut res: String;
             if flags.contains(&'e') {
                 res = util::float_to_exp(*self, options)?;
@@ -615,12 +600,16 @@ impl Fmt for f32 {
 /// Common numeric options are also recognized.
 impl Fmt for f64 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut res: String;
             if flags.contains(&'e') {
                 res = util::float_to_exp(*self, options)?;
@@ -643,12 +632,16 @@ impl Fmt for f64 {
 /// Common and common numeric options are recognized.
 impl Fmt for i8 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -666,12 +659,16 @@ impl Fmt for i8 {
 /// Common and common numeric options are recognized.
 impl Fmt for i16 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -689,12 +686,16 @@ impl Fmt for i16 {
 /// Common and common numeric options are recognized.
 impl Fmt for i32 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -712,12 +713,16 @@ impl Fmt for i32 {
 /// Common and common numeric options are recognized.
 impl Fmt for i64 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -735,12 +740,16 @@ impl Fmt for i64 {
 /// Common and common numeric options are recognized.
 impl Fmt for i128 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -758,12 +767,16 @@ impl Fmt for i128 {
 /// Common and common numeric options are recognized.
 impl Fmt for isize {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             util::add_sign(&mut s, *self, flags)?;
             util::apply_common_options(&mut s, options)?;
@@ -775,12 +788,16 @@ impl Fmt for isize {
 /// Common options are recognised.
 impl<'a> Fmt for &'a str {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               _flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = self.to_string();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
@@ -791,12 +808,16 @@ impl<'a> Fmt for &'a str {
 /// Common options are recognised.
 impl Fmt for String {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               _flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = self.clone();
             util::apply_common_options(&mut s, options)?;
             Ok(s)
@@ -813,12 +834,16 @@ impl Fmt for String {
 /// Common and common numeric options are recognised.
 impl Fmt for u8 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -838,12 +863,16 @@ impl Fmt for u8 {
 /// Common and common numeric options are recognised.
 impl Fmt for u16 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -863,12 +892,16 @@ impl Fmt for u16 {
 /// Common and common numeric options are recognised.
 impl Fmt for u32 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -888,12 +921,16 @@ impl Fmt for u32 {
 /// Common and common numeric options are recognised.
 impl Fmt for u64 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -913,12 +950,16 @@ impl Fmt for u64 {
 /// Common and common numeric options are recognised.
 impl Fmt for u128 {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -938,12 +979,16 @@ impl Fmt for u128 {
 /// Common and common numeric options are recognised.
 impl Fmt for usize {
     fn format(&self,
-              _name: &[String],
+              full_name: &[String],
+              name: &[String],
               _args: &[String],
               flags: &[char],
               options: &HashMap<String, String>)
         -> Result<String, SingleFmtError>
         {
+            if !name.is_empty() {
+                return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+            }
             let mut s = util::int_to_str(*self, flags, options)?;
             if flags.contains(&'+') {
                 s.insert(0, '+');
@@ -1203,7 +1248,7 @@ mod fmt_tests {
         name nested_fmts;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {BoxOrRef, FormatTable, Fmt, SingleFmtError, util};
+        use {FormatTable, Fmt, SingleFmtError, util};
 
         struct Point {
             x: i32,
@@ -1217,45 +1262,44 @@ mod fmt_tests {
 
         impl Fmt for Point {
             fn format(&self,
+                      full_name: &[String],
                       name: &[String],
-                      _args: &[String],
-                      _flags: &[char],
-                      _options: &HashMap<String, String>)
+                      args: &[String],
+                      flags: &[char],
+                      options: &HashMap<String, String>)
                 -> Result<String, SingleFmtError>
                 {
-                    Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(name)))
+                    if name.is_empty() {
+                        Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(full_name)))
+                    } else if name[0] == "x" {
+                        self.x.format(full_name, &name[1..], args, flags, options)
+                    } else if name[0] == "y" {
+                        self.y.format(full_name, &name[1..], args, flags, options)
+                    } else {
+                        Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+                    }
                 }
-            fn get_subfmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-                println!("name is '{}'", name);
-                if name == "x" {
-                    Some(BoxOrRef::Ref(&self.x))
-                } else if name == "y" {
-                    Some(BoxOrRef::Ref(&self.y))
-                } else {
-                    None
-                }
-            }
         }
 
         impl Fmt for Line {
             fn format(&self,
+                      full_name: &[String],
                       name: &[String],
-                      _args: &[String],
-                      _flags: &[char],
-                      _options: &HashMap<String, String>)
+                      args: &[String],
+                      flags: &[char],
+                      options: &HashMap<String, String>)
                 -> Result<String, SingleFmtError>
                 {
-                    Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(name)))
+                    if name.is_empty() {
+                        Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(full_name)))
+                    } else if name[0] == "start" || name[0] == "a" {
+                        self.start.format(full_name, &name[1..], args, flags, options)
+                    } else if name[0] == "end" || name[0] == "b" {
+                        self.end.format(full_name, &name[1..], args, flags, options)
+                    } else {
+                        Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+                    }
                 }
-            fn get_subfmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-                if name == "start" || name == "a" {
-                    Some(BoxOrRef::Ref(&self.start))
-                } else if name == "end" || name == "b" {
-                    Some(BoxOrRef::Ref(&self.end))
-                } else {
-                    None
-                }
-            }
         }
 
         test single_nested() {
@@ -1265,6 +1309,17 @@ mod fmt_tests {
             table.insert("a", &a);
             table.insert("b", &b);
             let s = table.format("{a.x}, {b.y}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("0, 10"));
+        }
+
+        test double_nested() {
+            let line = Line {
+                start: Point { x: 0, y: 2 },
+                end: Point { x: 6, y: 10},
+            };
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("line", &line);
+            let s = table.format("{line.start.x}, {line.end.y}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0, 10"));
         }
 
