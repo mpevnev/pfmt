@@ -584,14 +584,12 @@ impl Fmt for bool {
             } else {
                 "true".to_string()
             }
+        } else if flags.contains(&'y') {
+            "no".to_string()
+        } else if flags.contains(&'Y') {
+            "N".to_string()
         } else {
-            if flags.contains(&'y') {
-                "no".to_string()
-            } else if flags.contains(&'Y') {
-                "N".to_string()
-            } else {
-                "false".to_string()
-            }
+            "false".to_string()
         };
         util::apply_common_options(&mut res, options)?;
         Ok(res)
