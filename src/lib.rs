@@ -51,7 +51,7 @@
  * table.insert("i", &i);
  * table.insert("j", &j);
  * let s = table.format("i = {i}, j = {j}").unwrap();
- * assert!(s == "i = 2, j = 5");
+ * assert_eq!(s, "i = 2, j = 5");
  * ```
  * I can do that with `format!` too. This is a bit more fun, and shows both
  * options and flags:
@@ -68,7 +68,7 @@
  * table.insert("j", &j);
  * // (note escaped colons)
  * let s = table.format("hex\\: {i:px}, octal\\: {j:o}, fixed width\\: {s::truncate=r5}").unwrap();
- * assert!(s == "hex: 0xa, octal: 14, fixed width: a_rea");
+ * assert_eq!(s, "hex: 0xa, octal: 14, fixed width: a_rea");
  * ```
  * Can't decide if you want your booleans as "true" and "false", or "yes" and
  * "no"? Easy:
@@ -82,7 +82,7 @@
  * table.insert("a", &a);
  * table.insert("b", &b);
  * let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
- * assert!(s == "true, no, N");
+ * assert_eq!(s, "true, no, N");
  * ```
  * And here are `Vec`s as format tables:
  * ```
@@ -91,7 +91,7 @@
  * let j = 2;
  * let table: Vec<&Fmt> = vec![&i, &j];
  * let s = table.format("{0}, {1}, {0}").unwrap();
- * assert!(s == "1, 2, 1");
+ * assert_eq!(s, "1, 2, 1");
  * ```
  * All of the above examples used references as the element type of the format
  * tables, but `FormatTable` is implemented (for hashmaps and vectors) for
@@ -105,9 +105,50 @@
  * table.insert("a".to_string(), Box::new(2) as Box<Fmt>);
  * table.insert("b".to_string(), Box::new("foobar".to_string()) as Box<Fmt>);
  * let s = table.format("{a}, {b}").unwrap();
- * assert!(s == "2, foobar");
+ * assert_eq!(s, "2, foobar");
  * ```
  * This is a bit on the verbose side, though.
+ *
+ * The library also suppports accessing elements of `Fmt`s through the same
+ * syntax Rust uses: dot-notation, provided the implementation of `Fmt` in
+ * question allows it:
+ * ```
+ * use std::collections::HashMap;
+ * use pfmt::{Fmt, FormatTable, SingleFmtError, util};
+ * 
+ * struct Point {
+ *     x: i32,
+ *     y: i32
+ * }
+ * 
+ * impl Fmt for Point {
+ *     fn format(
+ *         &self,
+ *         full_name: &[String],
+ *         name: &[String],
+ *         args: &[String],
+ *         flags: &[char],
+ *         options: &HashMap<String, String>,
+ *     ) -> Result<String, SingleFmtError> {
+ *         if name.is_empty() {
+ *             Err(SingleFmtError::NamespaceOnlyFmt(util::join_name(full_name)))
+ *         } else if name[0] == "x" {
+ *             self.x.format(full_name, &name[1..], args, flags, options)
+ *         } else if name[0] == "y" {
+ *             self.y.format(full_name, &name[1..], args, flags, options)
+ *         } else {
+ *             Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)))
+ *         }
+ *     }
+ * }
+ * 
+ * let p = Point { x: 1, y: 2 };
+ * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * table.insert("p", &p);
+ * let s = table.format("{p.x}, {p.y}").unwrap();
+ * assert_eq!(s, "1, 2");
+ * ```
+ * This can be nested to arbitrary depth.
  *
  * # Errors
  * `format` method on `FormatTables` returns a `Result<String,
@@ -188,7 +229,7 @@
  *
  * let table = Producer { };
  * let s = table.format("{1}, {12}").unwrap();
- * assert!(s == "1, 12");
+ * assert_eq!(s, "1, 12");
  * ```
  * The above example is not particularly useful, but shows the point.
  *
@@ -210,7 +251,7 @@
  * let mut table2: HashMap<&str, &Fmt> = HashMap::new();
  * table2.insert("i", &i2);
  * let s = (table2, table1).format("{i}, {j}").unwrap();
- * assert!(s == "100, 2");
+ * assert_eq!(s, "100, 2");
  * ```
  */
 
@@ -313,7 +354,7 @@ impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
 
 /* ---------- errors ---------- */
 
-/// Errors that happen in individual formattables.
+/// Errors that happen in individual `Fmt`s.
 #[derive(Debug, PartialEq)]
 pub enum SingleFmtError {
     /// Returned if a `Fmt` receives a flag it doesn't know how to handle.
@@ -360,8 +401,9 @@ pub enum FormattingError {
     /// A `SingleFmtError::NamespaceOnlyFmt` is propagated as this.
     NamespaceOnlyFmt(String),
     // General errors.
-    /// Returned if the table could neither find nor produce a `Fmt` with the
-    /// given name (contained as the only field).
+    /// Returned when a requested `Fmt` does not exist (or cannot be created)
+    /// in the format table. A `SingleFmtError::UnknownSubfmt` is also
+    /// propagated as this. Contains the full path to the failed format unit.
     UnknownFmt(String),
 }
 
