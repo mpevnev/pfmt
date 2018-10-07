@@ -4,6 +4,10 @@ description = "A data formatting library"
 version = "0.1.0"
 authors = ["Michail Pevnev <mpevnev@gmail.com>"]
 license = "GPL-3.0-or-later"
+documentations = "https://docs.rs/pfmt"
+homepage = "https://github.com/mpevnev/pfmt"
+keywords = ["formatting"]
+categories = ["value-formatting"]
 
 [dependencies]
 num = "0.2.0"
