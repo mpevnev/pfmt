@@ -1027,6 +1027,14 @@ mod fmt_tests {
             assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i".to_string()))));
         }
 
+        test unknown_fmt_nested() {
+            let i = 1;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &i);
+            let s = table.format("{i.a}");
+            assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i.a".to_string()))));
+        }
+
         test integers_simple_1() {
             let i = 1;
             let j = 23;
@@ -1261,7 +1269,7 @@ mod fmt_tests {
         name nested_fmts;
         use std::collections::HashMap;
         use galvanic_assert::matchers::*;
-        use {FormatTable, Fmt, SingleFmtError, util};
+        use {FormatTable, Fmt, FormattingError, SingleFmtError, util};
 
         struct Point {
             x: i32,
@@ -1334,6 +1342,14 @@ mod fmt_tests {
             table.insert("line", &line);
             let s = table.format("{line.start.x}, {line.end.y}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0, 10"));
+        }
+
+        test namespace_only() {
+            let p = Point { x: 1, y: 2 };
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("p", &p);
+            let s = table.format("{p}");
+            assert_that!(&s, eq(Err(FormattingError::NamespaceOnlyFmt("p".to_string()))));
         }
 
     }
