@@ -16,15 +16,17 @@ pub enum Justification {
 }
 
 pub fn apply_common_options(
+    name: &[String],
     s: &mut String,
     options: &HashMap<String, String>,
 ) -> Result<(), SingleFmtError> {
-    apply_truncation(s, options)?;
-    apply_width(s, options)?;
+    apply_truncation(name, s, options)?;
+    apply_width(name, s, options)?;
     Ok(())
 }
 
 pub fn apply_width(
+    name: &[String],
     s: &mut String,
     options: &HashMap<String, String>,
 ) -> Result<(), SingleFmtError> {
@@ -35,6 +37,7 @@ pub fn apply_width(
             Some('r') => Justification::Right(),
             _ => {
                 return Err(SingleFmtError::InvalidOptionValue(
+                    join_name(name),
                     "width".to_string(),
                     width_str.to_string(),
                 ))
@@ -65,6 +68,7 @@ pub fn apply_width(
             }
         } else {
             return Err(InvalidOptionValue(
+                join_name(name),
                 "width".to_string(),
                 width_str.to_string(),
             ));
@@ -74,12 +78,14 @@ pub fn apply_width(
 }
 
 pub fn apply_truncation(
+    name: &[String],
     s: &mut String,
     options: &HashMap<String, String>,
 ) -> Result<(), SingleFmtError> {
     if let Some(opt_str) = options.get("truncate") {
         if opt_str.is_empty() {
             return Err(InvalidOptionValue(
+                join_name(name),
                 "truncate".to_string(),
                 opt_str.to_string(),
             ));
@@ -89,6 +95,7 @@ pub fn apply_truncation(
             Some('r') => false,
             _ => {
                 return Err(InvalidOptionValue(
+                    join_name(name),
                     "truncate".to_string(),
                     opt_str.to_string(),
                 ))
@@ -107,6 +114,7 @@ pub fn apply_truncation(
             Ok(())
         } else {
             Err(InvalidOptionValue(
+                join_name(name),
                 "truncate".to_string(),
                 opt_str.to_string(),
             ))
@@ -125,7 +133,10 @@ pub enum Rounding {
     Up(),
 }
 
-pub fn float_to_exp<T>(f: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+pub fn float_to_exp<T>(
+    name: &[String],
+    f: T, options: &HashMap<String, String>
+) -> Result<String, SingleFmtError>
 where
     T: num::Float + num::FromPrimitive + Copy + ToString,
 {
@@ -144,10 +155,10 @@ where
             abs = abs / ten;
         }
     }
-    if let Some(prec) = get_precision(options)? {
+    if let Some(prec) = get_precision(name, options)? {
         let mult = ten.powi(prec + p);
         abs = abs * mult;
-        abs = match get_rounding(options)? {
+        abs = match get_rounding(name, options)? {
             Some(Rounding::Up()) => abs.ceil(),
             Some(Rounding::Down()) => abs.floor(),
             Some(Rounding::Nearest()) | None => abs.round(),
@@ -163,7 +174,10 @@ where
     Ok(res)
 }
 
-pub fn float_to_normal<T>(f: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+pub fn float_to_normal<T>(
+    name: &[String],
+    f: T, options: &HashMap<String, String>
+) -> Result<String, SingleFmtError>
 where
     T: num::Float + num::FromPrimitive + Copy + ToString,
 {
@@ -171,10 +185,10 @@ where
         return Ok(f.to_string());
     }
     let mut f = f.abs();
-    if let Some(prec) = get_precision(options)? {
+    if let Some(prec) = get_precision(name, options)? {
         let mult = T::from_i32(10).unwrap().powi(prec);
         f = f * mult;
-        f = match get_rounding(options)? {
+        f = match get_rounding(name, options)? {
             Some(Rounding::Up()) => f.ceil(),
             Some(Rounding::Down()) => f.floor(),
             Some(Rounding::Nearest()) | None => f.round(),
@@ -185,6 +199,7 @@ where
 }
 
 pub fn int_to_str<T>(
+    name: &[String],
     i: T,
     flags: &[char],
     options: &HashMap<String, String>,
@@ -194,13 +209,13 @@ where
 {
     let prefix = flags.contains(&'p');
     if flags.contains(&'b') {
-        Ok(present_binary(i, prefix, options)?)
+        Ok(present_binary(name, i, prefix, options)?)
     } else if flags.contains(&'o') {
-        Ok(present_octal(i, prefix, options)?)
+        Ok(present_octal(name, i, prefix, options)?)
     } else if flags.contains(&'x') {
-        Ok(present_hexadecimal(i, prefix, options)?)
+        Ok(present_hexadecimal(name, i, prefix, options)?)
     } else {
-        Ok(present_decimal(i, options)?)
+        Ok(present_decimal(name, i, options)?)
     }
 }
 
@@ -233,12 +248,15 @@ pub fn join_name(name: &[String]) -> String {
 
 /* ---------- helpers ---------- */
 
-fn get_precision(options: &HashMap<String, String>) -> Result<Option<i32>, SingleFmtError> {
+fn get_precision(
+    name: &[String],
+    options: &HashMap<String, String>
+) -> Result<Option<i32>, SingleFmtError> {
     if let Some(s) = options.get("prec") {
         if let Ok(i) = s.parse::<i32>() {
             Ok(Some(i))
         } else {
-            Err(InvalidOptionValue("prec".to_string(), s.to_string()))
+            Err(InvalidOptionValue(join_name(name), "prec".to_string(), s.to_string()))
         }
     } else {
         Ok(None)
@@ -246,6 +264,7 @@ fn get_precision(options: &HashMap<String, String>) -> Result<Option<i32>, Singl
 }
 
 fn present_binary<T>(
+    name: &[String],
     i: T,
     prefix: bool,
     options: &HashMap<String, String>,
@@ -255,7 +274,7 @@ where
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let two = T::from_i32(2).unwrap();
-    apply_integer_rounding(&mut i, two, options)?;
+    apply_integer_rounding(name, &mut i, two, options)?;
     let mut chars = Vec::new();
     while i != T::zero() {
         let ch = ((i % two).to_u8().unwrap() + '0' as u8) as char;
@@ -270,6 +289,7 @@ where
 }
 
 fn present_octal<T>(
+    name: &[String],
     i: T,
     prefix: bool,
     options: &HashMap<String, String>,
@@ -280,7 +300,7 @@ where
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let eight = T::from_i32(8).unwrap();
-    apply_integer_rounding(&mut i, eight, options)?;
+    apply_integer_rounding(name, &mut i, eight, options)?;
     while i != T::zero() {
         let ch = ((i % eight).to_u8().unwrap() + '0' as u8) as char;
         chars.push(ch);
@@ -294,6 +314,7 @@ where
 }
 
 fn present_hexadecimal<T>(
+    name: &[String],
     i: T,
     prefix: bool,
     options: &HashMap<String, String>,
@@ -304,7 +325,7 @@ where
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let hex = T::from_i32(16).unwrap();
-    apply_integer_rounding(&mut i, hex, options)?;
+    apply_integer_rounding(name, &mut i, hex, options)?;
     while i > T::zero() {
         let index = (i % hex).to_u8().unwrap();
         let ch = if index < 10 {
@@ -322,17 +343,23 @@ where
     Ok(chars.iter().rev().collect())
 }
 
-fn present_decimal<T>(i: T, options: &HashMap<String, String>) -> Result<String, SingleFmtError>
+fn present_decimal<T>(
+    name: &[String],
+    i: T, options: &HashMap<String, String>
+) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy,
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let ten = T::from_i32(10).unwrap();
-    apply_integer_rounding(&mut i, ten, options)?;
+    apply_integer_rounding(name, &mut i, ten, options)?;
     Ok(i.to_string())
 }
 
-fn get_rounding(options: &HashMap<String, String>) -> Result<Option<Rounding>, SingleFmtError> {
+fn get_rounding(
+    name: &[String],
+    options: &HashMap<String, String>
+) -> Result<Option<Rounding>, SingleFmtError> {
     if let Some(s) = options.get("round") {
         if s == "up" {
             Ok(Some(Rounding::Up()))
@@ -341,7 +368,7 @@ fn get_rounding(options: &HashMap<String, String>) -> Result<Option<Rounding>, S
         } else if s == "nearest" {
             Ok(Some(Rounding::Nearest()))
         } else {
-            Err(InvalidOptionValue("round".to_string(), s.to_string()))
+            Err(InvalidOptionValue(join_name(name), "round".to_string(), s.to_string()))
         }
     } else {
         Ok(None)
@@ -363,6 +390,7 @@ where
 }
 
 fn apply_integer_rounding<T>(
+    name: &[String],
     i: &mut T,
     base: T,
     options: &HashMap<String, String>,
@@ -370,7 +398,7 @@ fn apply_integer_rounding<T>(
 where
     T: num::Integer + num::FromPrimitive + num::Zero + num::One + Copy,
 {
-    if let Some(prec) = get_precision(options)? {
+    if let Some(prec) = get_precision(name, options)? {
         if prec >= 0 {
             return Ok(());
         }
@@ -378,7 +406,7 @@ where
         let div = ipow(base, -prec);
         let rem = *i % div;
         let quot = *i / div;
-        match get_rounding(options)? {
+        match get_rounding(name, options)? {
             Some(Rounding::Up()) => {
                 if rem > T::zero() {
                     *i = (quot + T::one()) * div;

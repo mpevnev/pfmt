@@ -265,6 +265,7 @@ extern crate galvanic_test;
 extern crate num;
 
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::Deref;
 
@@ -354,21 +355,22 @@ impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
 
 /* ---------- errors ---------- */
 
-/// Errors that happen in individual `Fmt`s.
+/// Errors that happen in individual `Fmt`s. All of them contain the full path
+/// to the `Fmt` in error as the first field.
 #[derive(Debug, PartialEq)]
 pub enum SingleFmtError {
     /// Returned if a `Fmt` receives a flag it doesn't know how to handle.
     /// It's not actually used by the `impl`s for the standard types, but you
     /// can use it if you wish to be strict. Contains the erroneous flag.
-    UnknownFlag(char),
+    UnknownFlag(String, char),
     /// Returned if a `Fmt` receives an option it doesn't know how to handle.
     /// Again, standard types do not do this, they are not strict. Contains the
     /// erroneous option.
-    UnknownOption(String),
+    UnknownOption(String, String),
     /// Returned when a given option (stored in the first field) contains an
     /// invalid value (stored in the second field). Standard types *do* use
     /// this. Contains a pair of erroneous option's name and value.
-    InvalidOptionValue(String, String),
+    InvalidOptionValue(String, String, String),
     /// Returned when a `Fmt` that is only used as a container to hold/produce
     /// other `Fmt`s via the dot access syntax is used directly. Contains the
     /// full path to the format unit used in such fashion.
@@ -376,6 +378,13 @@ pub enum SingleFmtError {
     /// Returned when a `Fmt`does not contain a requested sub-`Fmt`. Contains
     /// the full path to the child format unit.
     UnknownSubfmt(String),
+    /// Returned when a `Fmt` was passed wrong number of arguments. The
+    /// `Ordering` member specifies whether more, less or precisely the
+    /// expected number (given by the `usize` field) is required.
+    WrongNumberOfArguments(String, Ordering, usize),
+    /// Returned when a `Fmt` is passed an argument it can't process. Contains
+    /// the index and contents of the argument in error.
+    InvalidArgument(String, usize, String),
 }
 
 /// Any error that can happen during formatting.
@@ -393,13 +402,17 @@ pub enum FormattingError {
     UnterminatedPlaceholder(String),
     // Errors from single Fmts.
     /// A `SingleFmtError::UnknownFlag` is propagated as this.
-    UnknownFlag(char),
+    UnknownFlag(String, char),
     /// A `SingleFmtError::UnknownOption` is propagated as this.
-    UnknownOption(String),
+    UnknownOption(String, String),
     /// A `SingleFmtError::InvalidOptionValue` is propagated as this.
-    InvalidOptionValue(String, String),
+    InvalidOptionValue(String, String, String),
     /// A `SingleFmtError::NamespaceOnlyFmt` is propagated as this.
     NamespaceOnlyFmt(String),
+    /// A `SingleFmtError::WrongNumberOfArguments` is propagated as this.
+    WrongNumberOfArguments(String, Ordering, usize),
+    /// A `SingleFmtError::InvalidArgument` is propagated as this.
+    InvalidArgument(String, usize, String),
     // General errors.
     /// Returned when a requested `Fmt` does not exist (or cannot be created)
     /// in the format table. A `SingleFmtError::UnknownSubfmt` is also
@@ -410,13 +423,16 @@ pub enum FormattingError {
 impl From<SingleFmtError> for FormattingError {
     fn from(err: SingleFmtError) -> Self {
         match err {
-            SingleFmtError::UnknownFlag(c) => FormattingError::UnknownFlag(c),
-            SingleFmtError::UnknownOption(s) => FormattingError::UnknownOption(s),
-            SingleFmtError::InvalidOptionValue(opt, val) => {
-                FormattingError::InvalidOptionValue(opt, val)
-            }
+            SingleFmtError::UnknownFlag(s, c) => FormattingError::UnknownFlag(s, c),
+            SingleFmtError::UnknownOption(p, o) => FormattingError::UnknownOption(p, o),
+            SingleFmtError::InvalidOptionValue(p, opt, val) =>
+                FormattingError::InvalidOptionValue(p, opt, val),
             SingleFmtError::NamespaceOnlyFmt(s) => FormattingError::NamespaceOnlyFmt(s),
             SingleFmtError::UnknownSubfmt(s) => FormattingError::UnknownFmt(s),
+            SingleFmtError::WrongNumberOfArguments(s, o, n) =>
+                FormattingError::WrongNumberOfArguments(s, o, n),
+            SingleFmtError::InvalidArgument(s, i, a) =>
+                FormattingError::InvalidArgument(s, i, a),
         }
     }
 }
@@ -563,7 +579,7 @@ where
 /// This instance is aware of the following flags:
 /// * `y`, which changes the output from true/false to yes/no;
 /// * `Y`, which changes the output to Y/N.
-/// Common options are recognised.
+/// Common options are recognized.
 impl Fmt for bool {
     fn format(
         &self,
@@ -593,13 +609,13 @@ impl Fmt for bool {
                 "false".to_string()
             }
         };
-        util::apply_common_options(&mut res, options)?;
+        util::apply_common_options(full_name, &mut res, options)?;
         Ok(res)
     }
 }
 
 /// This instance has no special flags.
-/// Common options are recognised.
+/// Common options are recognized.
 impl Fmt for char {
     fn format(
         &self,
@@ -613,7 +629,7 @@ impl Fmt for char {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
         let mut s = self.to_string();
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -622,8 +638,8 @@ impl Fmt for char {
 /// * `+`, which forces display of the sign;
 /// * `e`, which changes the output to the scientific, or exponential,
 /// notation.
-/// Common options are recognised.
-/// Common numeric options are also recognised.
+/// Common options are recognized.
+/// Common numeric options are also recognized.
 impl Fmt for f32 {
     fn format(
         &self,
@@ -638,12 +654,12 @@ impl Fmt for f32 {
         }
         let mut res: String;
         if flags.contains(&'e') {
-            res = util::float_to_exp(*self, options)?;
+            res = util::float_to_exp(full_name, *self, options)?;
         } else {
-            res = util::float_to_normal(*self, options)?;
+            res = util::float_to_normal(full_name, *self, options)?;
         }
         util::add_sign(&mut res, *self, flags)?;
-        util::apply_common_options(&mut res, options)?;
+        util::apply_common_options(full_name, &mut res, options)?;
         Ok(res)
     }
 }
@@ -667,12 +683,12 @@ impl Fmt for f64 {
         }
         let mut res: String;
         if flags.contains(&'e') {
-            res = util::float_to_exp(*self, options)?;
+            res = util::float_to_exp(full_name, *self, options)?;
         } else {
-            res = util::float_to_normal(*self, options)?;
+            res = util::float_to_normal(full_name, *self, options)?;
         }
         util::add_sign(&mut res, *self, flags)?;
-        util::apply_common_options(&mut res, options)?;
+        util::apply_common_options(full_name, &mut res, options)?;
         Ok(res)
     }
 }
@@ -697,9 +713,9 @@ impl Fmt for i8 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -724,9 +740,9 @@ impl Fmt for i16 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -751,9 +767,9 @@ impl Fmt for i32 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -778,9 +794,9 @@ impl Fmt for i64 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -805,9 +821,9 @@ impl Fmt for i128 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -832,15 +848,15 @@ impl Fmt for isize {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         util::add_sign(&mut s, *self, flags)?;
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
 
 /// This instance has no special flags.
-/// Common options are recognised.
+/// Common options are recognized.
 impl<'a> Fmt for &'a str {
     fn format(
         &self,
@@ -854,13 +870,13 @@ impl<'a> Fmt for &'a str {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
         let mut s = self.to_string();
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
 
 /// This instance has no special flags.
-/// Common options are recognised.
+/// Common options are recognized.
 impl Fmt for String {
     fn format(
         &self,
@@ -874,7 +890,7 @@ impl Fmt for String {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
         let mut s = self.clone();
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -886,7 +902,7 @@ impl Fmt for String {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for u8 {
     fn format(
         &self,
@@ -899,11 +915,11 @@ impl Fmt for u8 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -915,7 +931,7 @@ impl Fmt for u8 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for u16 {
     fn format(
         &self,
@@ -928,11 +944,11 @@ impl Fmt for u16 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -944,7 +960,7 @@ impl Fmt for u16 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for u32 {
     fn format(
         &self,
@@ -957,11 +973,11 @@ impl Fmt for u32 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -973,7 +989,7 @@ impl Fmt for u32 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for u64 {
     fn format(
         &self,
@@ -986,11 +1002,11 @@ impl Fmt for u64 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -1002,7 +1018,7 @@ impl Fmt for u64 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for u128 {
     fn format(
         &self,
@@ -1015,11 +1031,11 @@ impl Fmt for u128 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
@@ -1031,7 +1047,7 @@ impl Fmt for u128 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
-/// Common and common numeric options are recognised.
+/// Common and common numeric options are recognized.
 impl Fmt for usize {
     fn format(
         &self,
@@ -1044,11 +1060,11 @@ impl Fmt for usize {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut s = util::int_to_str(*self, flags, options)?;
+        let mut s = util::int_to_str(full_name, *self, flags, options)?;
         if flags.contains(&'+') {
             s.insert(0, '+');
         }
-        util::apply_common_options(&mut s, options)?;
+        util::apply_common_options(full_name, &mut s, options)?;
         Ok(s)
     }
 }
