@@ -273,6 +273,7 @@ use parse::{parse, ParseError, Piece};
 
 mod parse;
 
+pub mod extras;
 pub mod util;
 
 /* ---------- base traits ---------- */
