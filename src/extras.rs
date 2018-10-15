@@ -2,6 +2,7 @@
 //! This module provides various non-essential, but nice-to-have things, mostly
 //! newtype wrappers with specific implementations of `Fmt`.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use {Fmt, SingleFmtError};
@@ -9,18 +10,18 @@ use {Fmt, SingleFmtError};
 /* ---------- simple closure support ---------- */
 
 pub struct Lazy<F> {
-    closure: Box<F>
+    closure: RefCell<F>
 }
 
-impl<T, F: Fn() -> T> Lazy<F> {
+impl<T, F: FnMut() -> T> Lazy<F> {
     pub fn new(closure: F) -> Self {
         Lazy {
-            closure: Box::new(closure)
+            closure: RefCell::new(closure)
         }
     }
 }
 
-impl<T: Fmt, F: Fn() -> T> Fmt for Lazy<F> {
+impl<T: Fmt, F: FnMut() -> T> Fmt for Lazy<F> {
     fn format(
         &self,
         full_name: &[String],
@@ -29,7 +30,9 @@ impl<T: Fmt, F: Fn() -> T> Fmt for Lazy<F> {
         flags: &[char],
         options: &HashMap<String, String>,
     ) -> Result<String, SingleFmtError> {
-        (*self.closure)().format(full_name, name, args, flags, options)
+        let mut r = self.closure.borrow_mut();
+        let fmt = (&mut *r)();
+        fmt.format(full_name, name, args, flags, options)
     }
 }
 
@@ -113,13 +116,14 @@ mod extras_tests {
             assert_that!(&s.as_str(), eq("ASDF"));
         }
 
-        /*
         test mutable_lazy() {
             let mut i = 0;
-            let c = Lazy::new(|| { i += 1; i });
+            let c = Lazy::new(move || { i += 1; i });
             let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &c);
+            let s = table.format("{i}, {i}, {i}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1, 2, 3"));
         }
-        */
 
     }
 
