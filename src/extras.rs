@@ -10,13 +10,13 @@ use {Fmt, SingleFmtError};
 /* ---------- simple closure support ---------- */
 
 pub struct Lazy<F> {
-    closure: RefCell<F>
+    closure: RefCell<F>,
 }
 
-impl<T, F: FnMut() -> T> Lazy<F> {
+impl<T: Fmt, F: FnMut() -> T> Lazy<F> {
     pub fn new(closure: F) -> Self {
         Lazy {
-            closure: RefCell::new(closure)
+            closure: RefCell::new(closure),
         }
     }
 }
@@ -36,32 +36,69 @@ impl<T: Fmt, F: FnMut() -> T> Fmt for Lazy<F> {
     }
 }
 
-/* ---------- ad-hoc formatting using more complex closures ---------- */
+/* ---------- ad-hoc formatting from just name ---------- */
 
-pub struct AdHoc<F>
-where 
-    F: Fn(&[String], &[String], &[String], &[char], &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
+pub struct AdHocMin<F>
+where
+    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
 {
-    closure: Box<F>
+    closure: RefCell<F>,
 }
 
-impl<F> AdHoc<F>
+impl<F> AdHocMin<F>
 where
-    F: Fn(&[String], &[String], &[String], &[char], &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
+    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
 {
     pub fn new(closure: F) -> Self {
-        AdHoc {
-            closure: Box::new(closure)
+        AdHocMin {
+            closure: RefCell::new(closure)
         }
     }
 }
 
-impl<F> Fmt for AdHoc<F>
+impl<F> Fmt for AdHocMin<F>
 where
-    F: Fn(&[String], &[String], &[String], &[char], &HashMap<String, String>)
-        -> Result<String, SingleFmtError>
+    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
+{
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        _flags: &[char],
+        _options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        let mut closure = self.closure.borrow_mut();
+        (&mut *closure)(full_name, name)
+    }
+}
+
+/* ---------- ad-hoc closures of maximum complexity ---------- */
+
+pub struct AdHocFull<F>
+where
+    F: FnMut(&[String], &[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>,
+{
+    closure: RefCell<F>,
+}
+
+impl<F> AdHocFull<F>
+where
+    F: FnMut(&[String], &[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>,
+{
+    pub fn new(closure: F) -> Self {
+        AdHocFull {
+            closure: RefCell::new(closure),
+        }
+    }
+}
+
+impl<F> Fmt for AdHocFull<F>
+where
+    F: FnMut(&[String], &[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>,
 {
     fn format(
         &self,
@@ -71,7 +108,8 @@ where
         flags: &[char],
         options: &HashMap<String, String>,
     ) -> Result<String, SingleFmtError> {
-        (*self.closure)(full_name, name, args, flags, options)
+        let mut closure = self.closure.borrow_mut();
+        (&mut *closure)(full_name, name, args, flags, options)
     }
 }
 
@@ -86,7 +124,7 @@ mod extras_tests {
         use galvanic_assert::matchers::*;
 
         use {FormatTable, Fmt, SingleFmtError};
-        use extras::{Lazy, AdHoc};
+        use extras::{Lazy, AdHocFull};
         use util;
 
         test lazy() {
@@ -98,8 +136,8 @@ mod extras_tests {
         }
 
         test ad_hoc() {
-            // This thing converts its first argument in upper case.
-            let f = AdHoc::new(|full_name, _, args: &[String], _, _| {
+            // This thing converts its first argument to upper case.
+            let f = AdHocFull::new(|full_name, _, args: &[String], _, _| {
                 if args.is_empty() {
                     Err(SingleFmtError::WrongNumberOfArguments(
                             util::join_name(full_name),
