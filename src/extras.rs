@@ -73,6 +73,120 @@ where
     }
 }
 
+/* ---------- ad-hoc closures with arguments ---------- */
+
+pub struct AdHocArgs<F>
+where
+    F: FnMut(&[String], &[String], &[String]) -> Result<String, SingleFmtError>
+{
+    closure: RefCell<F>,
+}
+
+impl<F> AdHocArgs<F>
+where
+    F: FnMut(&[String], &[String], &[String]) -> Result<String, SingleFmtError>
+{
+    pub fn new(closure: F) -> Self {
+        AdHocArgs {
+            closure: RefCell::new(closure),
+        }
+    }
+}
+
+impl<F> Fmt for AdHocArgs<F>
+where
+    F: FnMut(&[String], &[String], &[String]) -> Result<String, SingleFmtError>
+{
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        args: &[String],
+        _flags: &[char],
+        _options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        let mut closure = self.closure.borrow_mut();
+        (&mut *closure)(full_name, name, args)
+    }
+}
+
+/* ---------- ad-hoc closures with options ---------- */
+
+pub struct AdHocOpts<F>
+where
+    F: FnMut(&[String], &[String], &HashMap<String, String>) -> Result<String, SingleFmtError>
+{
+    closure: RefCell<F>,
+}
+
+impl<F> AdHocOpts<F>
+where 
+    F: FnMut(&[String], &[String], &HashMap<String, String>) -> Result<String, SingleFmtError>
+{
+    pub fn new(closure: F) -> Self {
+        AdHocOpts {
+            closure: RefCell::new(closure),
+        }
+    }
+}
+
+impl<F> Fmt for AdHocOpts<F>
+where
+    F: FnMut(&[String], &[String], &HashMap<String, String>) -> Result<String, SingleFmtError>
+{
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        _flags: &[char],
+        options: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        let mut closure = self.closure.borrow_mut();
+        (&mut *closure)(full_name, name, options)
+    }
+}
+
+/* ---------- ad-hoc closures with flags and options ---------- */
+
+pub struct AdHocFlagsOpts<F>
+where
+    F: FnMut(&[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+{
+    closure: RefCell<F>,
+}
+
+impl<F> AdHocFlagsOpts<F>
+where 
+    F: FnMut(&[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+{
+    pub fn new(closure: F) -> Self {
+        AdHocFlagsOpts {
+            closure: RefCell::new(closure),
+        }
+    }
+}
+
+impl<F> Fmt for AdHocFlagsOpts<F>
+where
+    F: FnMut(&[String], &[String], &[char], &HashMap<String, String>)
+        -> Result<String, SingleFmtError>
+{
+    fn format(
+        &self,
+        full_name: &[String],
+        name: &[String],
+        _args: &[String],
+        flags: &[char],
+        opts: &HashMap<String, String>,
+    ) -> Result<String, SingleFmtError> {
+        let mut closure = self.closure.borrow_mut();
+        (&mut *closure)(full_name, name, flags, opts)
+    }
+}
+
 /* ---------- ad-hoc closures of maximum complexity ---------- */
 
 pub struct AdHocFull<F>
