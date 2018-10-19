@@ -1,6 +1,29 @@
-//! # Overview
-//! This module provides various non-essential, but nice-to-have things, mostly
-//! newtype wrappers with specific implementations of `Fmt`.
+//! Non-essential niceties
+//!
+//! # Closures support
+//! There are several struct wrappers over closures which allow using closures
+//! as `Fmt`s. All of them are defined for `FnMut` closures. The simplest form
+//! of these is `Lazy`, which wraps a closure producing a single `Fmt` to
+//! actually control the formatting. There are also several `AdHoc*`
+//! structures, with arguments of each being a subset of arguments of the
+//! `format` method on `Fmt`. The intent is to provide a way to get some
+//! quick-and-dirty formatting without defining a new data type.
+//!
+//! Since all of these are defined not just for `Fn`s, but for `FnMut`s, it's
+//! possible to do neat things like self-incrementing lists:
+//! ```
+//! use std::collections::HashMap;
+//! 
+//! use pfmt::{Fmt, FormatTable};
+//! use pfmt::extras::Lazy;
+//! 
+//! let mut index = 0;
+//! let mut counter = Lazy::new(move || { index += 1; index });
+//! let mut table: HashMap<&str, &Fmt> = HashMap::new();
+//! table.insert("i", &counter);
+//! let s = table.format("{i} - spam\n{i} - eggs").unwrap();
+//! assert_eq!(&s, "1 - spam\n2 - eggs");
+//! ```
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9,11 +32,20 @@ use {Fmt, SingleFmtError};
 
 /* ---------- simple closure support ---------- */
 
-pub struct Lazy<F> {
+/// A wrapper over a closure producing a `Fmt`.
+///
+/// Note that the closure can be `FnMut`, not just `Fn`.
+/// Automatically honors any flags, arguments and options the produced `Fmt`
+/// recognizes.
+pub struct Lazy<T, F>
+where
+    T: Fmt,
+    F: FnMut() -> T
+{
     closure: RefCell<F>,
 }
 
-impl<T: Fmt, F: FnMut() -> T> Lazy<F> {
+impl<T: Fmt, F: FnMut() -> T> Lazy<T, F> {
     pub fn new(closure: F) -> Self {
         Lazy {
             closure: RefCell::new(closure),
@@ -21,7 +53,8 @@ impl<T: Fmt, F: FnMut() -> T> Lazy<F> {
     }
 }
 
-impl<T: Fmt, F: FnMut() -> T> Fmt for Lazy<F> {
+impl<T: Fmt, F: FnMut() -> T> Fmt for Lazy<T, F> {
+    /// Call the wrapped closure to get a `Fmt`, then call `format` on it.
     fn format(
         &self,
         full_name: &[String],
@@ -36,45 +69,15 @@ impl<T: Fmt, F: FnMut() -> T> Fmt for Lazy<F> {
     }
 }
 
-/* ---------- ad-hoc formatting from just name ---------- */
-
-pub struct AdHocMin<F>
-where
-    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
-{
-    closure: RefCell<F>,
-}
-
-impl<F> AdHocMin<F>
-where
-    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
-{
-    pub fn new(closure: F) -> Self {
-        AdHocMin {
-            closure: RefCell::new(closure)
-        }
-    }
-}
-
-impl<F> Fmt for AdHocMin<F>
-where
-    F: FnMut(&[String], &[String]) -> Result<String, SingleFmtError>
-{
-    fn format(
-        &self,
-        full_name: &[String],
-        name: &[String],
-        _args: &[String],
-        _flags: &[char],
-        _options: &HashMap<String, String>,
-    ) -> Result<String, SingleFmtError> {
-        let mut closure = self.closure.borrow_mut();
-        (&mut *closure)(full_name, name)
-    }
-}
-
 /* ---------- ad-hoc closures with arguments ---------- */
 
+/// A wrapper over a closure that accepts `full_name`, `name` and `args`
+/// parameters of the `format` method on `Fmt`.
+///
+/// Note that the closure can be `FnMut`, not just `Fn`. 
+/// Also note that while it is possible to call other `Fmt`s recursively from
+/// the closure, the flags and options of the original `format` call will be
+/// necessarily lost and will have to be replaced somehow by the closure.
 pub struct AdHocArgs<F>
 where
     F: FnMut(&[String], &[String], &[String]) -> Result<String, SingleFmtError>
@@ -112,6 +115,13 @@ where
 
 /* ---------- ad-hoc closures with options ---------- */
 
+/// A wrapper over a closure that accepts `full_name`, `name` and `options`
+/// parameters of the `format` method on `Fmt`.
+///
+/// Note that the closure can be `FnMut`, not just `Fn`.
+/// Also note that while it is possible to call other `Fmt`s recursively from
+/// the closure, the arguments and flags of the original `format` call will be
+/// lost and will have to be somehow replaced by the closure itself.
 pub struct AdHocOpts<F>
 where
     F: FnMut(&[String], &[String], &HashMap<String, String>) -> Result<String, SingleFmtError>
@@ -149,6 +159,13 @@ where
 
 /* ---------- ad-hoc closures with flags and options ---------- */
 
+/// A wrapper over a closure that accepts `full_name`, `name`, `flags` and
+/// `options` parameters of the `format` method on `Fmt`.
+///
+/// Note that the closure can be `FnMut`, not just `Fn`.
+/// Also note that while it is possible to call other `Fmt`s from the closure,
+/// the `args` parameter of the original `format` call will be lost and will
+/// have to be replaced somehow by the closure.
 pub struct AdHocFlagsOpts<F>
 where
     F: FnMut(&[String], &[String], &[char], &HashMap<String, String>)
@@ -189,6 +206,10 @@ where
 
 /* ---------- ad-hoc closures of maximum complexity ---------- */
 
+/// A wrapper over a closure with the same signature as the `format` method on
+/// `Fmt`.
+///
+/// The closure doesn't have to be `Fn`, it can be `FnMut`.
 pub struct AdHocFull<F>
 where
     F: FnMut(&[String], &[String], &[String], &[char], &HashMap<String, String>)
