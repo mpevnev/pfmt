@@ -278,9 +278,14 @@ pub mod util;
 
 /* ---------- base traits ---------- */
 
-/// This trait drives the formatting of a single placeholder. Placeholder's
-/// arguments, flags and options are passed to the `format` method.
+/// A unit of formatting.
 pub trait Fmt {
+    /// Perform the formatting of a single placeholder. Placeholder's full
+    /// name, name segments of child format units, arguments, flags and options
+    /// will be passed to this method.
+    ///
+    /// You should not use this method directly, use `format` on `FormatTable`
+    /// instead.
     fn format(
         &self,
         full_name: &[String],
@@ -291,9 +296,15 @@ pub trait Fmt {
     ) -> Result<String, SingleFmtError>;
 }
 
+/// A collection or producer of format units.
 pub trait FormatTable {
+    /// Produce or retrieve a format unit with the given name stem.
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>>;
 
+    /// Perform formatting of a format string.
+    ///
+    /// This method is not meant to be overridden. You can, but you would have
+    /// to reimplement format strings parser yourself.
     fn format(&self, input: &str) -> Result<String, FormattingError> {
         let pieces = parse(input)?;
         let mut res = String::new();
@@ -330,6 +341,7 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(
 
 /* ---------- an important helper thing ---------- */
 
+/// A `Cow` without `ToOwned`.
 pub enum BoxOrRef<'a, T: ?Sized + 'a> {
     Boxed(Box<T>),
     Ref(&'a T),
@@ -471,18 +483,24 @@ impl<'a, T: FormatTable> FormatTable for &'a T {
 
 /* ---------- implementations of FormatTable for standard types ---------- */
 
+/// This implementation recognizes placeholders with string names stored in the
+/// hash map.
 impl<B: Borrow<dyn Fmt>> FormatTable for HashMap<String, B> {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         self.get(name).map(|b| BoxOrRef::Ref(b.borrow()))
     }
 }
 
+/// This implementation recognizes placeholders with string names (represented by
+/// string slices) stored in the hash map.
 impl<'a, B: Borrow<dyn Fmt>> FormatTable for HashMap<&'a str, B> {
     fn get_fmt<'b, 'c>(&'b self, name: &'c str) -> Option<BoxOrRef<'b, dyn Fmt>> {
         self.get(name).map(|r| BoxOrRef::Ref(r.borrow()))
     }
 }
 
+/// This implementation recognizes placeholders which names are valid integer
+/// indices into the vector.
 impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
     fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
         if let Ok(index) = name.parse::<usize>() {
@@ -497,6 +515,8 @@ impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
     }
 }
 
+/// This implementation first uses the first table to look up placeholders'
+/// names, and then the second.
 impl<A, B> FormatTable for (A, B)
 where
     A: FormatTable,
@@ -507,6 +527,8 @@ where
     }
 }
 
+/// This implementation looks up placeholders' names consecutively in three
+/// other tables.
 impl<A, B, C> FormatTable for (A, B, C)
 where
     A: FormatTable,
@@ -521,6 +543,8 @@ where
     }
 }
 
+/// This implementation looks up placeholders' names consecutively in four
+/// other tables.
 impl<A, B, C, D> FormatTable for (A, B, C, D)
 where
     A: FormatTable,
@@ -537,6 +561,8 @@ where
     }
 }
 
+/// This implementation looks up placeholders' names consecutively in five
+/// other tables.
 impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
 where
     A: FormatTable,
@@ -555,6 +581,8 @@ where
     }
 }
 
+/// This implementation looks up placeholders' names consecutively in six other
+/// tables.
 impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
 where
     A: FormatTable,
