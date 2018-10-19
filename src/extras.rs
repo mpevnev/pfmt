@@ -259,7 +259,7 @@ mod extras_tests {
         use galvanic_assert::matchers::*;
 
         use {FormatTable, Fmt, SingleFmtError};
-        use extras::{Lazy, AdHocFull};
+        use extras::*;
         use util;
 
         test lazy() {
@@ -270,7 +270,47 @@ mod extras_tests {
             assert_that!(&s.as_str(), eq("10"));
         }
 
-        test ad_hoc() {
+        test mutable_lazy() {
+            let mut i = 0;
+            let c = Lazy::new(move || { i += 1; i });
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("i", &c);
+            let s = table.format("{i}, {i}, {i}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("1, 2, 3"));
+        }
+
+        test ad_hoc_args() {
+            // Convert the first argument to upper case. If there is no
+            // argument, return '!!!'.
+            let f = AdHocArgs::new(|_, _, args| {
+                if args.is_empty() {
+                    Ok("!!!".to_string())
+                } else {
+                    Ok(args[0].to_uppercase())
+                }
+            });
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f{asdf}}, {f}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("ASDF, !!!"));
+        }
+
+        test ad_hoc_opts() {
+            // Return 'defined' if 'opt' is set, 'undefined' otherwise.
+            let f = AdHocOpts::new(|_, _, opts| {
+                if opts.contains_key("opt") {
+                    Ok("defined".to_string())
+                } else {
+                    Ok("undefined".to_string())
+                }
+            });
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
+            table.insert("f", &f);
+            let s = table.format("{f::opt=}, {f}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("defined, undefined"));
+        }
+
+        test ad_hoc_full() {
             // This thing converts its first argument to upper case.
             let f = AdHocFull::new(|full_name, _, args: &[String], _, _| {
                 if args.is_empty() {
@@ -287,15 +327,6 @@ mod extras_tests {
             table.insert("f", &f);
             let s = table.format("{f{asdf}}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("ASDF"));
-        }
-
-        test mutable_lazy() {
-            let mut i = 0;
-            let c = Lazy::new(move || { i += 1; i });
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
-            table.insert("i", &c);
-            let s = table.format("{i}, {i}, {i}").expect("Failed to format");
-            assert_that!(&s.as_str(), eq("1, 2, 3"));
         }
 
     }
