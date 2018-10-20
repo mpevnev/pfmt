@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter::Peekable;
 
 const ESCAPE: char = '\\';
 const SETOPT: char = '=';
@@ -8,304 +9,422 @@ const CLOSING_BRACKET: char = '}';
 const DOT: char = '.';
 const MAX_RECURSION_DEPTH: u8 = 100;
 
-/// Either a literal string, or a placecholder.
 #[derive(Debug, PartialEq)]
+/// An element of a format string.
 pub enum Piece {
+    /// A literal string.
     Literal(String),
+    /// A single placeholder.
+    ///
+    /// Contains name segments, arguments, flags and options.
     Placeholder(Vec<String>, Vec<Piece>, Vec<char>, HashMap<String, Piece>),
+    /// Multiple elements.
+    Multi(Vec<Piece>),
 }
 
-/// Errors that occur during parsing a format string.
+/// A part of a format string that will map to a single literal or placeholder.
+struct InputChunk<'a> {
+    input: &'a str,
+    start: usize,
+    kind: InputChunkKind,
+}
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+/// A kind of input chunk.
+enum InputChunkKind {
+    Literal,
+    Placeholder,
+    MultiplePieces,
+}
+
+/// An error that can occur while parsing a format string.
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
-    EmptyNameSegment(String),
-    UnterminatedArgumentList(String),
-    UnterminatedPlaceholder(String),
+    /// Returned if the brackets in a format string are unbalanced.
+    ///
+    /// Contains the position (byte-wise) of the unbalanced bracket in the
+    /// input.
+    UnbalancedBrackets(usize),
+    /// Returned if a name segment in one of the placeholders is empty.
+    ///
+    /// Contains the position (byte-wise) of the empty segment in the input.
+    EmptyNameSegment(usize),
+    /// Returned when an option has an empty name.
+    ///
+    /// Contains the position (byte-wise) of the option in the input.
+    EmptyOptionName(usize),
 }
 
-pub fn parse(input: &str) -> Result<Vec<Piece>, ParseError> {
-    let mut input = input;
+pub fn parse(input: &str, position: usize) -> Result<Piece, ParseError> {
+    validate_brackets(input)?;
+    let mut pieces = Vec::new();
+    for chunk in split(input, position) {
+        pieces.push(parse_chunk(chunk)?);
+    }
+    Ok(Piece::Multi(pieces))
+}
+
+/// Transform an input chunk into a literal or a placeholder.
+fn parse_chunk<'a>(chunk: InputChunk<'a>) -> Result<Piece, ParseError> {
+    match chunk.kind {
+        InputChunkKind::Literal => Ok(parse_literal(chunk.input)),
+        InputChunkKind::Placeholder => parse_placeholder(chunk.input, chunk.start),
+        InputChunkKind::MultiplePieces => parse(chunk.input, chunk.start),
+    }
+}
+
+/// Transform an input string into a literal.
+fn parse_literal(input: &str) -> Piece {
+    let mut prev = None;
+    let mut string = String::with_capacity(input.len());
+    for ch in input.chars() {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                string.push(ESCAPE);
+                prev = None;
+            } else {
+                string.push(ch);
+                prev = Some(ch);
+            }
+        } else {
+            string.push(ch);
+            prev = Some(ch);
+        }
+    }
+    Piece::Literal(string)
+}
+
+/// Transform an input string into a placeholder.
+fn parse_placeholder(input: &str, position: usize) -> Result<Piece, ParseError> {
+    let mut iter = input.char_indices().peekable();
+    let name = extract_name(input, &mut iter, position)?;
+    let args = extract_args(input, &mut iter, position)?;
+    let flags = extract_flags(input, &mut iter);
+    let options = extract_options(input, &mut iter, position)?;
+    Ok(Piece::Placeholder(name, args, flags, options))
+}
+
+/// Extract a name from the input string. Colons and opening brackets terminate
+/// the name and are not consumed by the function.
+fn extract_name<T>(
+    source: &str,
+    iter: &mut Peekable<T>,
+    position: usize,
+) -> Result<Vec<String>, ParseError>
+where
+    T: Iterator<Item = (usize, char)>,
+{
+    let mut name = Vec::new();
+    let mut segment = String::new();
+    let mut prev = None;
+    let mut last_segment_start = 0;
+    while let Some(&(i, ch)) = iter.peek() {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                segment.push(ESCAPE);
+                prev = None;
+            } else {
+                if ch != ESCAPE {
+                    segment.push(ch);
+                }
+                prev = Some(ch);
+            }
+            iter.next();
+        } else {
+            if ch == DOT {
+                name.push(trim_name_segment(segment, position + last_segment_start)?);
+                segment = String::new();
+                last_segment_start = i;
+                iter.next();
+            } else if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET {
+                name.push(trim_name_segment(segment, position + last_segment_start)?);
+                return Ok(name);
+            } else {
+                segment.push(ch);
+                iter.next();
+            }
+            prev = Some(ch);
+        }
+    }
+    name.push(trim_name_segment(segment, position + last_segment_start)?);
+    Ok(name)
+}
+
+/// Extract placeholder's arguments from the input string, if any. Terminating
+/// bracket is consumed.
+fn extract_args<T>(
+    source: &str,
+    iter: &mut Peekable<T>,
+    position: usize,
+) -> Result<Vec<Piece>, ParseError>
+where
+    T: Iterator<Item = (usize, char)>,
+{
     let mut res = Vec::new();
-    while !input.is_empty() {
-        let (piece, rest) = parse_piece(input, 0, false)?;
-        input = rest;
-        res.push(piece);
+    if let Some(&(i, ch)) = iter.peek() {
+        if ch != OPENING_BRACKET {
+            return Ok(res);
+        }
+        let args_portion = extract_between_brackets(source, &mut iter);
+        let chunks = split_on_colons(args_portion, position);
+        for chunk in chunks.iter() {
+            let piece = parse(chunk.input, chunk.start)?;
+            res.push(piece);
+        }
     }
     Ok(res)
 }
 
-fn parse_piece(
-    input: &str,
-    recursion_depth: u8,
-    new_arglist: bool,
-) -> Result<(Piece, &str), ParseError> {
-    let mut iter = input.chars();
-    match iter.next() {
-        Some(OPENING_BRACKET) => parse_placeholder(input, recursion_depth),
-        _ => parse_literal(input, new_arglist),
+/// Extract placeholder's flags from the input string, if any. Terminating
+/// colon is consumed.
+fn extract_flags<T>(source: &str, iter: &mut Peekable<T>) -> Vec<char>
+where
+    T: Iterator<Item = (usize, char)>,
+{
+    if let Some(&(_, FIELD_SEPARATOR)) = iter.peek() {
+        iter.next();
     }
-}
-
-fn parse_literal(input: &str, new_arglist: bool) -> Result<(Piece, &str), ParseError> {
+    let mut res = Vec::new();
     let mut prev = None;
-    let mut literal = String::new();
-    for (i, ch) in input.char_indices() {
-        if i == 0 && ch == FIELD_SEPARATOR {
-            if new_arglist {
-                return Ok((Piece::Literal(literal), input));
-            } else {
-                continue;
+    while let Some((_, ch)) = iter.next() {
+        if prev == Some(ESCAPE) {
+            res.push(ch);
+            prev = if ch == ESCAPE { None } else { Some(ch) };
+        } else {
+            if ch == FIELD_SEPARATOR {
+                return res;
             }
-        }
-        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
-            return Ok((Piece::Literal(literal), &input[i..]));
-        }
-        if ch == OPENING_BRACKET && prev != Some(ESCAPE) {
-            return Ok((Piece::Literal(literal), &input[i..]));
-        }
-        if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
-            return Ok((Piece::Literal(literal), &input[i..]));
-        }
-        if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET || ch == CLOSING_BRACKET {
-            literal.push(ch);
-            prev = Some(ch);
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            literal.push(ch);
-            prev = None;
-        } else if ch != ESCAPE {
-            literal.push(ch);
-            prev = Some(ch);
-        } else {
+            res.push(ch);
             prev = Some(ch);
         }
     }
-    Ok((Piece::Literal(literal), ""))
+    res
 }
 
-fn parse_placeholder(input: &str, recursion_depth: u8) -> Result<(Piece, &str), ParseError> {
-    if recursion_depth > MAX_RECURSION_DEPTH {
-        return grab_until_terminator(input);
-    }
-    let first_input = input;
-    let input = &input[1..]; // skip the {
-    let (name, input) = extract_name(first_input, input)?;
-    let (arguments, input) = extract_arguments(first_input, input, recursion_depth)?;
-    let (flags, input) = extract_flags(first_input, input)?;
-    let (options, input) = extract_options(first_input, input, recursion_depth)?;
-    let input = extract_placeholder_terminator(first_input, input)?;
-    Ok((Piece::Placeholder(name, arguments, flags, options), input))
-}
-
-fn extract_name<'a, 'b>(
-    orig_input: &'a str,
-    input: &'b str,
-) -> Result<(Vec<String>, &'b str), ParseError> {
-    let mut name = Vec::new();
-    let mut segment = String::new();
-    let mut prev = None;
-    for (i, ch) in input.char_indices() {
-        if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET || ch == CLOSING_BRACKET {
-            if prev == Some(ESCAPE) {
-                segment.push(ch);
-                prev = Some(ch);
-            } else {
-                name.push(segment);
-                let mut res = Vec::with_capacity(name.len());
-                for segm in name.iter() {
-                    res.push(trim_name(orig_input, &segm)?);
-                }
-                return Ok((res, &input[i..]));
-            }
-        } else if ch == DOT && prev != Some(ESCAPE) {
-            name.push(segment);
-            segment = String::new();
-            prev = Some(ch);
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            segment.push(ESCAPE);
-            prev = None;
-        } else if ch == ESCAPE {
-            prev = Some(ch);
-        } else {
-            segment.push(ch);
-            prev = Some(ch);
-        }
-    }
-    Err(ParseError::UnterminatedPlaceholder(orig_input.to_string()))
-}
-
-fn extract_arguments<'a, 'b>(
-    first_input: &'a str,
-    input: &'b str,
-    recursion_depth: u8,
-) -> Result<(Vec<Piece>, &'b str), ParseError> {
-    let mut iter = input.char_indices();
-    match iter.next() {
-        Some((_, OPENING_BRACKET)) => (),
-        Some((_, FIELD_SEPARATOR)) => return Ok((Vec::new(), input)),
-        Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
-        _ => panic!(
-            "Somehow dead code in 'extract_arguments' was reached on input: '{}'",
-            input
-        ),
-    }
-    let mut input = &input[1..];
-    let mut args = Vec::new();
-    let mut first = true;
-    while input.chars().next() != Some(CLOSING_BRACKET) {
-        let (piece, rest) = parse_piece(input, recursion_depth + 1, first)?;
-        first = false;
-        args.push(piece);
-        input = rest;
-        if input.is_empty() {
-            return Err(ParseError::UnterminatedArgumentList(
-                first_input.to_string(),
-            ));
-        }
-    }
-    Ok((args, &input[1..]))
-}
-
-fn extract_flags<'a, 'b>(
-    full_input: &'a str,
-    input: &'b str,
-) -> Result<(Vec<char>, &'b str), ParseError> {
-    let mut iter = input.char_indices().peekable();
-    match iter.peek() {
-        Some((_, FIELD_SEPARATOR)) => {
-            iter.next();
-        }
-        Some((_, CLOSING_BRACKET)) => return Ok((Vec::new(), input)),
-        Some(_) => (),
-        None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
-    }
-    let mut flags = Vec::new();
-    let mut prev = None;
-    for (i, ch) in iter {
-        if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
-            return Ok((flags, &input[i..]));
-        } else if ch == FIELD_SEPARATOR && prev == Some(ESCAPE) {
-            flags.push(ch);
-            prev = Some(ch);
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            flags.push(ch);
-            prev = None;
-        } else if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
-            return Ok((flags, &input[i..]));
-        } else if ch != ESCAPE {
-            flags.push(ch);
-            prev = Some(ch);
-        } else {
-            prev = Some(ch);
-        }
-    }
-    if prev != Some(CLOSING_BRACKET) {
-        Err(ParseError::UnterminatedPlaceholder(full_input.to_string()))
+/// Extract placeholder's options from the input string, if any.
+fn extract_options<T>(
+    source: &str,
+    iter: &mut Peekable<T>,
+    sourcepos: usize,
+) -> Result<HashMap<String, Piece>, ParseError>
+where
+    T: Iterator<Item = (usize, char)>,
+{
+    let section_start;
+    if let Some((i, _)) = iter.next() {
+        section_start = i;
     } else {
-        Ok((flags, ""))
+        return Ok(HashMap::new());
     }
+    let chunks = split_on_colons(&source[section_start..], sourcepos + section_start);
+    let mut res = HashMap::new();
+    for InputChunk { input: chunk, start, .. } in chunks {
+        let (opt, val) = parse_option(chunk, start)?;
+        res.insert(opt, val);
+    }
+    Ok(res)
 }
 
-fn extract_options<'a, 'b>(
-    full_input: &'a str,
-    input: &'b str,
-    recursion_depth: u8,
-) -> Result<(HashMap<String, Piece>, &'b str), ParseError> {
-    let mut iter = input.char_indices();
-    match iter.next() {
-        Some((_, FIELD_SEPARATOR)) => (),
-        Some((_, CLOSING_BRACKET)) => return Ok((HashMap::new(), input)),
-        None => return Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
-        _ => panic!(
-            "Reached dead code in 'extract_options' on input '{}'",
-            full_input
-        ),
-    }
-    let mut res: HashMap<String, Piece> = HashMap::new();
-    let mut prev = None;
-    let mut name = String::new();
-    let mut input = input;
-    let mut end = 0;
-    loop {
-        let maybe_next = iter.next();
-        if maybe_next.is_none() {
-            break;
-        }
-        let (i, ch) = maybe_next.unwrap();
-        end = i;
-        if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
-            break;
-        } else if ch == FIELD_SEPARATOR && prev != Some(ESCAPE) {
-            input = &input[1..];
-            iter = input.char_indices();
-            name = String::new();
-            continue;
-        } else if ch == SETOPT && prev != Some(ESCAPE) {
-            name = trim_name(full_input, &name)?;
-            let (opt, rest) = parse_piece(&input[i + 1..], recursion_depth + 1, false)?;
-            res.insert(name, opt);
-            iter = rest.char_indices();
-            input = rest;
-            name = String::new();
-            continue;
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            name.push(ESCAPE);
-            prev = None;
-        } else if ch == ESCAPE && prev != Some(ESCAPE) {
-            prev = Some(ch);
+/// Split a (portion of) format string into individual chunks.
+fn split(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
+    let mut iter = source.char_indices().peekable();
+    let mut res = Vec::new();
+    while let Some(&(i, ch)) = iter.peek() {
+        let chunk;
+        if ch == OPENING_BRACKET {
+            let portion = extract_between_brackets(source, &mut iter);
+            chunk = InputChunk {
+                input: portion,
+                start: sourcepos + i,
+                kind: InputChunkKind::Placeholder,
+            };
         } else {
-            name.push(ch);
-            prev = Some(ch);
+            let portion = extract_literal(source, &mut iter);
+            chunk = InputChunk {
+                input: portion,
+                start: sourcepos + i,
+                kind: InputChunkKind::Literal,
+            };
         }
+        res.push(chunk);
     }
-    if !name.is_empty() {
-        res.insert(name, Piece::Literal("".to_string()));
-    }
-    Ok((res, &input[end..]))
+    res
 }
 
-fn extract_placeholder_terminator<'a, 'b>(
-    full_input: &'a str,
-    input: &'b str,
-) -> Result<&'b str, ParseError> {
-    match input.chars().next() {
-        Some(CLOSING_BRACKET) => Ok(&input[1..]),
-        _ => Err(ParseError::UnterminatedPlaceholder(full_input.to_string())),
-    }
-}
-
-fn grab_until_terminator(input: &str) -> Result<(Piece, &str), ParseError> {
+/// Split a portion of format string on colons that are not nested in
+/// placeholders. The function assumes that brackets in the input are balanced.
+fn split_on_colons(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
+    let mut iter = source.char_indices().peekable();
+    let mut res = Vec::new();
+    let mut balance: usize = 0;
     let mut prev = None;
-    let mut literal = String::new();
-    let mut balance = 1;
-    for (i, ch) in input.char_indices() {
-        if ch == OPENING_BRACKET && prev != Some(ESCAPE) {
-            balance += 1;
-            literal.push(ch);
+    let mut chunk_start = 0;
+    if let Some(&(_, FIELD_SEPARATOR)) = iter.peek() {
+        iter.next();
+    }
+    for (i, ch) in iter {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                prev = None;
+            } else {
+                prev = Some(ch);
+            }
+        } else {
+            if ch == OPENING_BRACKET {
+                balance += 1;
+            } else if ch == CLOSING_BRACKET {
+                balance -= 1;
+            } else if ch == FIELD_SEPARATOR && balance == 0 {
+                res.push(InputChunk {
+                    input: &source[chunk_start..i],
+                    start: sourcepos + chunk_start,
+                    kind: InputChunkKind::MultiplePieces,
+                });
+                chunk_start = i + 1;
+            }
             prev = Some(ch);
-        } else if ch == CLOSING_BRACKET && prev != Some(ESCAPE) {
-            balance -= 1;
-            literal.push(ch);
-            prev = Some(ch);
-        } else if ch == ESCAPE && prev == Some(ESCAPE) {
-            literal.push(ch);
-            prev = None;
-        } else if ch != ESCAPE {
-            literal.push(ch);
-            prev = Some(ch);
-        }
-        if balance == 0 {
-            return Ok((Piece::Literal(literal), &input[i + 1..]));
         }
     }
-    Err(ParseError::UnterminatedPlaceholder(input.to_string()))
+    res
 }
 
-fn trim_name(global_source: &str, name: &str) -> Result<String, ParseError> {
-    let res = name.trim().to_string();
+/// Parse a key-value pair into an option name and a Piece.
+fn parse_option(input: &str, sourcepos: usize)
+    -> Result<(String, Piece), ParseError>
+{
+    let mut name = String::new();
+    let mut prev = None;
+    for (i, ch) in input.char_indices() {
+        if prev == Some(ESCAPE) {
+            name.push(ch);
+            prev = if ch == ESCAPE { None } else { Some(ch) };
+        } else {
+            if ch == SETOPT {
+                let value = parse(&input[i + 1 ..], sourcepos + i + 1)?;
+                let name = name.trim().to_string();
+                if name.is_empty() {
+                    return Err(ParseError::EmptyOptionName(sourcepos))
+                } else {
+                    return Ok((name, value));
+                }
+            } else {
+                name.push(ch);
+            }
+        }
+    }
+    Err(ParseError::EmptyOptionName(sourcepos))
+}
+
+
+/// Extract a literal from a format string. Stops either at an opening bracket
+/// without consuming it, or at a colon (consuming it).
+fn extract_literal<'a, T>(source: &'a str, iter: &mut Peekable<T>) -> &'a str
+where
+    T: Iterator<Item = (usize, char)>,
+{
+    let mut prev = None;
+    let mut end = 0;
+    if let Some(&(_, FIELD_SEPARATOR)) = iter.peek() {
+        iter.next();
+    }
+    while let Some(&(i, ch)) = iter.peek() {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                prev = None;
+            } else {
+                prev = Some(ch);
+            }
+            iter.next();
+        } else {
+            if ch == FIELD_SEPARATOR {
+                iter.next();
+                end = i;
+                break;
+            } else if ch == OPENING_BRACKET {
+                end = i;
+                break;
+            } else {
+                prev = Some(ch);
+                iter.next();
+            }
+        }
+    }
+    &source[..end]
+}
+
+/// Extract a portion of input between a balanced pair of brackets. The first
+/// character of the input is assumed to be a bracket, and the terminating
+/// bracket is consumed. This function also assumes that brackets are balanced
+/// in the input.
+fn extract_between_brackets<'a, T>(source: &'a str, iter: &mut Peekable<T>) -> &'a str
+where
+    T: Iterator<Item = (usize, char)>,
+{
+    let mut prev = None;
+    let mut balance: usize = 1;
+    iter.next(); // Drop the opening bracket.
+    while let Some(&(i, ch)) = iter.peek() {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                prev = None;
+            } else {
+                prev = Some(ch);
+            }
+            iter.next();
+        } else {
+            if ch == OPENING_BRACKET {
+                balance += 1;
+                iter.next();
+            } else if ch == CLOSING_BRACKET {
+                balance -= 1;
+                iter.next();
+                if balance == 0 {
+                    return &source[1..i];
+                }
+            }
+            prev = Some(ch);
+        }
+    }
+    unreachable!("A string with imbalanced brackets was passed to 'extract_between_brackets'");
+}
+
+fn trim_name_segment(segment: String, segment_start: usize) -> Result<String, ParseError> {
+    let res = segment.trim().to_string();
     if res.is_empty() {
-        Err(ParseError::EmptyNameSegment(global_source.to_string()))
+        Err(ParseError::EmptyNameSegment(segment_start))
     } else {
         Ok(res)
+    }
+}
+
+fn validate_brackets(source: &str) -> Result<(), ParseError> {
+    let mut prev = None;
+    let mut balance: usize = 0;
+    let mut last_bracket_pos = 0;
+    for (i, ch) in source.char_indices() {
+        if prev == Some(ESCAPE) {
+            if ch == ESCAPE {
+                prev = None;
+            }
+            prev = Some(ch);
+        } else {
+            if ch == OPENING_BRACKET {
+                balance += 1;
+                last_bracket_pos = i;
+            }
+            if ch == CLOSING_BRACKET {
+                if balance == 0 {
+                    return Err(ParseError::UnbalancedBrackets(i));
+                }
+                balance -= 1;
+            }
+            prev = Some(ch);
+        }
+    }
+    if balance != 0 {
+        Err(ParseError::UnbalancedBrackets(last_bracket_pos))
+    } else {
+        Ok(())
     }
 }
 
