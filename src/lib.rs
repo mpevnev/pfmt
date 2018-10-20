@@ -306,9 +306,7 @@ pub trait FormatTable {
     /// This method is not meant to be overridden. You can, but you would have
     /// to reimplement format strings parser yourself.
     fn format(&self, input: &str) -> Result<String, FormattingError> {
-        let piece = parse(input, 0)?;
-        let mut res = String::new();
-        format_one(self, &piece)
+        format_one(self, &parse(input, 0)?)
     }
 }
 

@@ -97,9 +97,9 @@ fn parse_literal(input: &str) -> Piece {
 /// Transform an input string into a placeholder.
 fn parse_placeholder(input: &str, position: usize) -> Result<Piece, ParseError> {
     let mut iter = input.char_indices().peekable();
-    let name = extract_name(input, &mut iter, position)?;
+    let name = extract_name(&mut iter, position)?;
     let args = extract_args(input, &mut iter, position)?;
-    let flags = extract_flags(input, &mut iter);
+    let flags = extract_flags(&mut iter);
     let options = extract_options(input, &mut iter, position)?;
     Ok(Piece::Placeholder(name, args, flags, options))
 }
@@ -107,7 +107,6 @@ fn parse_placeholder(input: &str, position: usize) -> Result<Piece, ParseError> 
 /// Extract a name from the input string. Colons and opening brackets terminate
 /// the name and are not consumed by the function.
 fn extract_name<T>(
-    source: &str,
     iter: &mut Peekable<T>,
     position: usize,
 ) -> Result<Vec<String>, ParseError>
@@ -161,11 +160,11 @@ where
     T: Iterator<Item = (usize, char)>,
 {
     let mut res = Vec::new();
-    if let Some(&(i, ch)) = iter.peek() {
+    if let Some(&(_, ch)) = iter.peek() {
         if ch != OPENING_BRACKET {
             return Ok(res);
         }
-        let args_portion = extract_between_brackets(source, &mut iter);
+        let args_portion = extract_between_brackets(source, iter);
         let chunks = split_on_colons(args_portion, position);
         for chunk in chunks.iter() {
             let piece = parse(chunk.input, chunk.start)?;
@@ -177,7 +176,7 @@ where
 
 /// Extract placeholder's flags from the input string, if any. Terminating
 /// colon is consumed.
-fn extract_flags<T>(source: &str, iter: &mut Peekable<T>) -> Vec<char>
+fn extract_flags<T>(iter: &mut Peekable<T>) -> Vec<char>
 where
     T: Iterator<Item = (usize, char)>,
 {
@@ -405,8 +404,9 @@ fn validate_brackets(source: &str) -> Result<(), ParseError> {
         if prev == Some(ESCAPE) {
             if ch == ESCAPE {
                 prev = None;
+            } else {
+                prev = Some(ch);
             }
-            prev = Some(ch);
         } else {
             if ch == OPENING_BRACKET {
                 balance += 1;
