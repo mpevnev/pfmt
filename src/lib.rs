@@ -306,12 +306,9 @@ pub trait FormatTable {
     /// This method is not meant to be overridden. You can, but you would have
     /// to reimplement format strings parser yourself.
     fn format(&self, input: &str) -> Result<String, FormattingError> {
-        let pieces = parse(input)?;
+        let piece = parse(input, 0)?;
         let mut res = String::new();
-        for piece in pieces.iter() {
-            res.push_str(&format_one(self, piece)?);
-        }
-        Ok(res)
+        format_one(self, &piece)
     }
 }
 
@@ -335,6 +332,13 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(
             } else {
                 Err(FormattingError::UnknownFmt(util::join_name(&name)))
             }
+        },
+        Piece::Multi(pieces) => {
+            let mut res = String::new();
+            for piece in pieces.iter() {
+                res.push_str(&format_one(table, piece)?);
+            }
+            Ok(res)
         }
     }
 }
@@ -404,15 +408,15 @@ pub enum SingleFmtError {
 #[derive(Debug, PartialEq)]
 pub enum FormattingError {
     // Parsing errors.
-    /// Returned if a placeholder has an empty name. Contains the erroneous
-    /// input.
-    EmptyName(String),
-    /// Retuned if an argument list is not closed off with a bracket. Contains
-    /// the erroneous input.
-    UnterminatedArgumentList(String),
-    /// Returned if a placeholder is not terminated. Contains the erroneous
-    /// input.
-    UnterminatedPlaceholder(String),
+    /// Returned when the brackets in the format string are not balanced.
+    /// Contains the byte address of the offending bracket.
+    UnbalancedBrackets(usize),
+    /// Returned when a placeholder in the format string has an empty name
+    /// segment. Contains the byte offset of the empty segment.
+    EmptyNameSegment(usize),
+    /// Returned when a placeholder's option has an empty name. Contains the
+    /// byte offset of the place where the name should have been.
+    EmptyOptionName(usize),
     // Errors from single Fmts.
     /// A `SingleFmtError::UnknownFlag` is propagated as this.
     UnknownFlag(String, char),
@@ -452,10 +456,11 @@ impl From<SingleFmtError> for FormattingError {
 
 impl From<ParseError> for FormattingError {
     fn from(err: ParseError) -> Self {
+        use parse::ParseError::*;
         match err {
-            ParseError::EmptyNameSegment(s) => FormattingError::EmptyName(s),
-            ParseError::UnterminatedArgumentList(s) => FormattingError::UnterminatedArgumentList(s),
-            ParseError::UnterminatedPlaceholder(s) => FormattingError::UnterminatedPlaceholder(s),
+            UnbalancedBrackets(i) => FormattingError::UnbalancedBrackets(i),
+            EmptyNameSegment(i) => FormattingError::EmptyNameSegment(i),
+            EmptyOptionName(i) => FormattingError::EmptyOptionName(i),
         }
     }
 }
