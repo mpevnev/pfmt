@@ -39,7 +39,7 @@ enum InputChunkKind {
 }
 
 /// An error that can occur while parsing a format string.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ParseError {
     /// Returned if the brackets in a format string are unbalanced.
     ///
@@ -144,7 +144,7 @@ where
             if ch == DOT {
                 name.push(trim_name_segment(segment, position + last_segment_start)?);
                 segment = String::new();
-                last_segment_start = i;
+                last_segment_start = i + 1;
                 iter.next();
             } else if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET {
                 name.push(trim_name_segment(segment, position + last_segment_start)?);
@@ -426,8 +426,7 @@ fn trim_name_segment(segment: String, segment_start: usize) -> Result<String, Pa
 
 fn validate_brackets(source: &str) -> Result<(), ParseError> {
     let mut prev = None;
-    let mut balance: usize = 0;
-    let mut last_bracket_pos = 0;
+    let mut opening_brackets = Vec::new();
     for (i, ch) in source.char_indices() {
         if prev == Some(ESCAPE) {
             if ch == ESCAPE {
@@ -437,20 +436,18 @@ fn validate_brackets(source: &str) -> Result<(), ParseError> {
             }
         } else {
             if ch == OPENING_BRACKET {
-                balance += 1;
-                last_bracket_pos = i;
+                opening_brackets.push(i);
             }
             if ch == CLOSING_BRACKET {
-                if balance == 0 {
+                if opening_brackets.pop().is_none() {
                     return Err(ParseError::UnbalancedBrackets(i));
                 }
-                balance -= 1;
             }
             prev = Some(ch);
         }
     }
-    if balance != 0 {
-        Err(ParseError::UnbalancedBrackets(last_bracket_pos))
+    if let Some(i) = opening_brackets.pop() {
+        Err(ParseError::UnbalancedBrackets(i))
     } else {
         Ok(())
     }
@@ -481,13 +478,13 @@ mod tests {
 
         test literal() {
             let s = "asdf 1";
-            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, eq(Literal(s.to_string())));
         }
 
         test single_placeholder_1() {
             let s = "a{b}c";
-            let multi = parse(&s, 0, 0).expect("Failed to parse");
+            let multi = parse(s, 0, 0).expect("Failed to parse");
             let pieces = multi.get_subpieces();
             assert_that!(&pieces.len(), eq(3));
             assert_that!(&pieces[0], eq(Literal("a".to_string())));
@@ -502,7 +499,7 @@ mod tests {
 
         test single_placeholder_2() {
             let s = "a{b}";
-            let res = parse(&s, 0, 0).expect("Failed to parse");
+            let res = parse(s, 0, 0).expect("Failed to parse");
             let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(2));
             assert_that!(&pieces[0], eq(Literal("a".to_string())));
@@ -516,7 +513,7 @@ mod tests {
 
         test several_placeholders() {
             let s = "a{b}c{d}";
-            let res = parse(&s, 0, 0).expect("Failed to get any pieces");
+            let res = parse(s, 0, 0).expect("Failed to get any pieces");
             let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(4));
             assert_that!(&pieces[0], eq(Literal("a".to_string())));
@@ -537,7 +534,7 @@ mod tests {
 
         test explicit_separator_before_literal() {
             let s = "{foobar}:asdf";
-            let res = parse(&s, 0, 0).expect("Failed to parse");
+            let res = parse(s, 0, 0).expect("Failed to parse");
             let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(2));
             assert_that!(&pieces[0], has_structure!(Placeholder [
@@ -551,13 +548,13 @@ mod tests {
 
         test escapes_in_literals() {
             let s = "a\\:b\\{c\\}d\\\\";
-            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, eq(Literal("a:b{c}d\\".to_string())));
         }
 
         test escapes_in_placeholder_names() {
             let s = "{fo\\:ob\\\\ar\\{\\}}";
-            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, has_structure!(Placeholder [
                 eq(vec!["fo:ob\\ar{}".to_string()]),
                 eq(vec![]),
@@ -568,7 +565,7 @@ mod tests {
 
         test escapes_in_option_names() {
             let s = "{foobar::o\\:p\\{\\}t\\\\ion=1}";
-            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, has_structure!(Placeholder [
                 eq(vec!["foobar".to_string()]),
                 eq(vec![]),
@@ -584,7 +581,7 @@ mod tests {
 
         test multiple_options() {
             let s = "{foobar::a=a:b=b}";
-            let piece = parse(&s, 0, 0).expect("Parse failed");
+            let piece = parse(s, 0, 0).expect("Parse failed");
             assert_that!(&piece, has_structure!(Placeholder [
                 eq(vec!["foobar".to_string()]),
                 eq(vec![]),
@@ -602,9 +599,6 @@ mod tests {
 
     }
 
-}
-
-/*
     test_suite! {
         name errors;
         use galvanic_assert::matchers::*;
@@ -612,45 +606,71 @@ mod tests {
         use parse::*;
         use parse::ParseError::*;
 
-        test unterminated_name() {
-            let s = "12{asdf";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, has_structure!(
-                    UnterminatedPlaceholder [eq("{asdf".to_string())]
-                    ));
+        test unbalanced_brackets_1() {
+            let s = "{";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(UnbalancedBrackets(0)));
         }
 
-        test unterminated_arguments_list() {
-            let s = "12{asdf{qq";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, eq(UnterminatedArgumentList("{asdf{qq".to_string())));
+        test unbalanced_brackets_2() {
+            let s = "{{}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(UnbalancedBrackets(0)));
         }
 
-        test unterminated_argument() {
-            let s = "12{asdf{{a";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, eq(UnterminatedPlaceholder("{a".to_string())));
+        test unbalanced_brackets_3() {
+            let s = "{}}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(UnbalancedBrackets(2)));
         }
 
-        test no_closing_bracket_after_arguments() {
-            let s = "{foobar{asdf}";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        test unbalanced_brackets_4() {
+            let s = "0123{";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(UnbalancedBrackets(4)));
         }
 
-        test unterminated_flags() {
-            let s = "{foobar:asdf";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        test empty_name_segment_1() {
+            let s = "0123{}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyNameSegment(4)));
         }
 
-        test unterminated_options() {
-            let s= "{foobar::";
-            let err = parse(&s, 0, 0).expect_err("Parse succeeded");
-            assert_that!(&err, eq(UnterminatedPlaceholder(s.to_string())));
+        test empty_name_segment_2() {
+            let s = "{.a}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyNameSegment(0)));
+        }
+
+        test empty_name_segment_3() {
+            let s = "{12..b}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyNameSegment(3)));
+        }
+
+        test empty_name_segment_4() {
+            let s = "{a.}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyNameSegment(2)));
+        }
+
+        test empty_option_name_1() {
+            let s = "{f::=4}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyOptionName(3)));
+        }
+
+        test empty_option_name_2() {
+            let s = "{f::a=b::}";
+            let err = parse(s, 0, 0).expect_err("Parse erroneously succeeded");
+            assert_that!(&err, eq(EmptyOptionName(7)));
         }
 
     }
+
+}
+
+/*
 
     test_suite! {
         name arguments;
@@ -662,7 +682,7 @@ mod tests {
 
         test single_argument() {
             let s = "{foobar{asdf}}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
             assert_that!(&piece, has_structure!(
@@ -676,7 +696,7 @@ mod tests {
 
         test two_literals() {
             let s = "{foobar{a:b}}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
             assert_that!(&piece, has_structure!(
@@ -690,7 +710,7 @@ mod tests {
 
         test empty_arguments() {
             let s = "{foobar{::}}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
             assert_that!(&piece, has_structure!(
@@ -707,7 +727,7 @@ mod tests {
 
         test full_literal() {
             let s = "{foobar{{baz{arg}flags:opt=1}}}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
             if let Placeholder(_, args, _, _) = piece {
@@ -737,7 +757,7 @@ mod tests {
 
         test several_segments() {
             let s = "{a.b.c}";
-            let res = parse(&s, 0, 0);
+            let res = parse(s, 0, 0);
             let pieces = res.expect("Failed to get any pieces");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
@@ -752,13 +772,13 @@ mod tests {
 
         test empty_segment() {
             let s = "{a..c}";
-            let res = parse(&s, 0, 0);
+            let res = parse(s, 0, 0);
             assert_that!(&res, eq(Err(ParseError::EmptyNameSegment("{a..c}".to_string()))));
         }
 
         test escapes_in_segments() {
             let s = "{a\\..b}";
-            let res = parse(&s, 0, 0);
+            let res = parse(s, 0, 0);
             let pieces = res.expect("Failed to get any pieces");
             assert_that!(&pieces.len(), eq(1));
             let piece = &pieces[0];
