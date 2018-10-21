@@ -57,6 +57,9 @@ pub enum ParseError {
 }
 
 pub fn parse(input: &str, position: usize, recursion_depth: u8) -> Result<Piece, ParseError> {
+    if input.is_empty() {
+        return Ok(Piece::Literal("".to_string()));
+    }
     validate_brackets(input)?;
     let mut pieces = Vec::new();
     for chunk in split(input, position) {
@@ -179,7 +182,7 @@ where
             return Ok(res);
         }
         let args_portion = extract_between_brackets(source, iter);
-        let chunks = split_on_colons(args_portion, position);
+        let chunks = split_on_colons(args_portion, position, false);
         for chunk in chunks.iter() {
             let piece = parse(chunk.input, chunk.start, recursion_depth + 1)?;
             res.push(piece);
@@ -232,7 +235,7 @@ where
     } else {
         return Ok(HashMap::new());
     }
-    let chunks = split_on_colons(&source[section_start..], sourcepos + section_start);
+    let chunks = split_on_colons(&source[section_start..], sourcepos + section_start, true);
     let mut res = HashMap::new();
     for chunk in chunks {
         let (opt, val) = parse_option(chunk.input, chunk.start, recursion_depth)?;
@@ -269,14 +272,20 @@ fn split(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
 
 /// Split a portion of format string on colons that are not nested in
 /// placeholders. The function assumes that brackets in the input are balanced.
-fn split_on_colons(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
+fn split_on_colons(
+    source: &str,
+    sourcepos: usize,
+    drop_leader: bool
+) -> Vec<InputChunk<'_>> {
     let mut iter = source.char_indices().peekable();
     let mut res = Vec::new();
     let mut balance: usize = 0;
     let mut prev = None;
     let mut chunk_start = 0;
     if let Some(&(_, FIELD_SEPARATOR)) = iter.peek() {
-        iter.next();
+        if drop_leader {
+            iter.next();
+        }
     }
     for (i, ch) in iter {
         if prev == Some(ESCAPE) {
@@ -301,13 +310,11 @@ fn split_on_colons(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
             prev = Some(ch);
         }
     }
-    if chunk_start < source.len() {
-        res.push(InputChunk {
-            input: &source[chunk_start..],
-            start: sourcepos + chunk_start,
-            kind: InputChunkKind::MultiplePieces,
-        });
-    }
+    res.push(InputChunk {
+        input: &source[chunk_start..],
+        start: sourcepos + chunk_start,
+        kind: InputChunkKind::MultiplePieces,
+    });
     res
 }
 
@@ -710,7 +717,7 @@ mod tests {
         }
 
         test empty_arguments() {
-            let s = "{foobar{::}}";
+            let s = "{foobar{:}}";
             let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, has_structure!(Placeholder [
                 eq(vec!["foobar".to_string()]),
