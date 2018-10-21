@@ -340,8 +340,13 @@ where
 {
     let mut prev = None;
     let mut end = source.len();
-    if let Some(&(_, FIELD_SEPARATOR)) = iter.peek() {
-        iter.next();
+    let mut start = 0;
+    if let Some(&(i, ch)) = iter.peek() {
+        start = i;
+        if ch == FIELD_SEPARATOR {
+            iter.next();
+            start += 1;
+        }
     }
     while let Some(&(i, ch)) = iter.peek() {
         if prev == Some(ESCAPE) {
@@ -365,7 +370,7 @@ where
             }
         }
     }
-    &source[..end]
+    &source[start..end]
 }
 
 /// Extract a portion of input between a balanced pair of brackets. The first
@@ -378,24 +383,21 @@ where
 {
     let mut prev = None;
     let mut balance: usize = 1;
-    iter.next(); // Drop the opening bracket.
-    while let Some(&(i, ch)) = iter.peek() {
+    let start = iter.next().unwrap().0;
+    for (i, ch) in iter {
         if prev == Some(ESCAPE) {
             if ch == ESCAPE {
                 prev = None;
             } else {
                 prev = Some(ch);
             }
-            iter.next();
         } else {
             if ch == OPENING_BRACKET {
                 balance += 1;
-                iter.next();
             } else if ch == CLOSING_BRACKET {
                 balance -= 1;
-                iter.next();
                 if balance == 0 {
-                    return &source[1..i];
+                    return &source[start + 1 .. i];
                 }
             }
             prev = Some(ch);
