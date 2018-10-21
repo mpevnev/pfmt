@@ -717,11 +717,13 @@ mod tests {
         }
 
         test empty_arguments() {
-            let s = "{foobar{:}}";
+            let s = "{foobar{::}}";
             let piece = parse(s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, has_structure!(Placeholder [
                 eq(vec!["foobar".to_string()]),
-                eq(vec![Literal("".to_string()), Literal("".to_string())]),
+                eq(vec![Literal("".to_string()),
+                    Literal("".to_string()),
+                    Literal("".to_string())]),
                 any_value(),
                 any_value()
             ]));
