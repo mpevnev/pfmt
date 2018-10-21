@@ -539,6 +539,41 @@ mod tests {
             ]));
         }
 
+        test flags_after_name() {
+            let s = "{foobar:flags:}";
+            let piece = parse(s, 0, 0).expect("Failed to parse");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![]),
+                eq(vec!['f', 'l', 'a', 'g', 's']),
+                any_value()
+            ]));
+        }
+
+        test flags_after_argument_1() {
+            let s = "{foobar{arg}f}";
+            let piece = parse(s, 0, 0).expect("Failed to parse");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![Literal("arg".to_string())]),
+                eq(vec!['f']),
+                any_value()
+            ]));
+        }
+
+        test flags_after_argument_2() {
+            let s = "{foobar{arg}:f}";
+            let piece = parse(s, 0, 0).expect("Failed to parse");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![Literal("arg".to_string())]),
+                eq(vec!['f']),
+                any_value()
+            ]));
+        }
+
+
+
         test explicit_separator_before_literal() {
             let s = "{foobar}:asdf";
             let res = parse(s, 0, 0).expect("Failed to parse");
