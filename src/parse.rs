@@ -95,7 +95,9 @@ fn parse_literal(input: &str) -> Piece {
                 prev = Some(ch);
             }
         } else {
-            string.push(ch);
+            if ch != ESCAPE {
+                string.push(ch);
+            }
             prev = Some(ch);
         }
     }
@@ -148,7 +150,9 @@ where
                 name.push(trim_name_segment(segment, position + last_segment_start)?);
                 return Ok(name);
             } else {
-                segment.push(ch);
+                if ch != ESCAPE {
+                    segment.push(ch);
+                }
                 iter.next();
             }
             prev = Some(ch);
@@ -203,7 +207,9 @@ where
             if ch == FIELD_SEPARATOR {
                 return res;
             }
-            res.push(ch);
+            if ch != ESCAPE {
+                res.push(ch);
+            }
             prev = Some(ch);
         }
     }
@@ -228,13 +234,8 @@ where
     }
     let chunks = split_on_colons(&source[section_start..], sourcepos + section_start);
     let mut res = HashMap::new();
-    for InputChunk {
-        input: chunk,
-        start,
-        ..
-    } in chunks
-    {
-        let (opt, val) = parse_option(chunk, start, recursion_depth)?;
+    for chunk in chunks {
+        let (opt, val) = parse_option(chunk.input, chunk.start, recursion_depth)?;
         res.insert(opt, val);
     }
     Ok(res)
@@ -300,6 +301,13 @@ fn split_on_colons(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
             prev = Some(ch);
         }
     }
+    if chunk_start < source.len() {
+        res.push(InputChunk {
+            input: &source[chunk_start..],
+            start: sourcepos + chunk_start,
+            kind: InputChunkKind::MultiplePieces,
+        });
+    }
     res
 }
 
@@ -324,9 +332,10 @@ fn parse_option(
                 } else {
                     return Ok((name, value));
                 }
-            } else {
+            } else if ch != ESCAPE {
                 name.push(ch);
             }
+            prev = Some(ch);
         }
     }
     Err(ParseError::EmptyOptionName(sourcepos))
@@ -480,6 +489,7 @@ mod tests {
             let s = "a{b}c";
             let multi = parse(&s, 0, 0).expect("Failed to parse");
             let pieces = multi.get_subpieces();
+            assert_that!(&pieces.len(), eq(3));
             assert_that!(&pieces[0], eq(Literal("a".to_string())));
             assert_that!(&pieces[1], has_structure!(Placeholder [
                 eq(vec!["b".to_string()]),
@@ -490,120 +500,111 @@ mod tests {
             assert_that!(&pieces[2], eq(Literal("c".to_string())));
         }
 
-    }
-}
-/*
-
         test single_placeholder_2() {
             let s = "a{b}";
-            let pieces = parse(&s, 0, 0).expect("Failed to get any pieces");
+            let res = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(2));
-            let a = &pieces[0];
-            let b = &pieces[1];
-            assert_that!(&a, eq(Literal("a".to_string())));
-            assert_that!(&b, has_structure!(Placeholder [
-                                            eq(vec!["b".to_string()]),
-                                            eq(Vec::new()),
-                                            eq(Vec::new()),
-                                            eq(HashMap::new())
+            assert_that!(&pieces[0], eq(Literal("a".to_string())));
+            assert_that!(&pieces[1], has_structure!(Placeholder [
+                eq(vec!["b".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq(HashMap::new())
             ]));
         }
 
         test several_placeholders() {
             let s = "a{b}c{d}";
-            let pieces = parse(&s, 0, 0).expect("Failed to get any pieces");
+            let res = parse(&s, 0, 0).expect("Failed to get any pieces");
+            let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(4));
-            let a = &pieces[0];
-            let b = &pieces[1];
-            let c = &pieces[2];
-            let d = &pieces[3];
-            assert_that!(&a, eq(Literal("a".to_string())));
-            assert_that!(&b, has_structure!(Placeholder [
-                                            eq(vec!["b".to_string()]),
-                                            eq(Vec::new()),
-                                            eq(Vec::new()),
-                                            eq(HashMap::new())
+            assert_that!(&pieces[0], eq(Literal("a".to_string())));
+            assert_that!(&pieces[1], has_structure!(Placeholder [
+                eq(vec!["b".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq(HashMap::new())
             ]));
-            assert_that!(&c, eq(Literal("c".to_string())));
-            assert_that!(&d, has_structure!(Placeholder [
-                                            eq(vec!["d".to_string()]),
-                                            eq(Vec::new()),
-                                            eq(Vec::new()),
-                                            eq(HashMap::new())
+            assert_that!(&pieces[2], eq(Literal("c".to_string())));
+            assert_that!(&pieces[3], has_structure!(Placeholder [
+                eq(vec!["d".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq(HashMap::new())
             ]));
         }
 
         test explicit_separator_before_literal() {
             let s = "{foobar}:asdf";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
+            let res = parse(&s, 0, 0).expect("Failed to parse");
+            let pieces = res.get_subpieces();
             assert_that!(&pieces.len(), eq(2));
-            let pl = &pieces[0];
-            assert_that!(&pl,
-                         eq(Placeholder(vec!["foobar".to_string()],
-                         Vec::new(),
-                         Vec::new(),
-                         HashMap::new()
-                         )));
-            let lit = &pieces[1];
-            assert_that!(&lit, eq(Literal("asdf".to_string())));
+            assert_that!(&pieces[0], has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq(HashMap::new())
+            ]));
+            assert_that!(&pieces[1], eq(Literal("asdf".to_string())));
         }
 
         test escapes_in_literals() {
             let s = "a\\:b\\{c\\}d\\\\";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
-            assert_that!(&pieces.len(), eq(1));
-            let piece = &pieces[0];
+            let piece = parse(&s, 0, 0).expect("Failed to parse");
             assert_that!(&piece, eq(Literal("a:b{c}d\\".to_string())));
         }
 
         test escapes_in_placeholder_names() {
             let s = "{fo\\:ob\\\\ar\\{\\}}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
-            assert_that!(&pieces.len(), eq(1));
-            let piece = &pieces[0];
-            assert_that!(&piece, eq(Placeholder(vec!["fo:ob\\ar{}".to_string()],
-                                                Vec::new(),
-                                                Vec::new(),
-                                                HashMap::new())));
+            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["fo:ob\\ar{}".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq(HashMap::new())
+            ]));
         }
 
         test escapes_in_option_names() {
             let s = "{foobar::o\\:p\\{\\}t\\\\ion=1}";
-            let pieces = parse(&s, 0, 0).expect("Failed to parse");
-            assert_that!(&pieces.len(), eq(1));
-            let piece = &pieces[0];
-            assert_that!(&piece, eq(Placeholder(vec!["foobar".to_string()],
-                                                Vec::new(),
-                                                Vec::new(),
-                                                {
-                                                    let mut m = HashMap::new();
-                                                    let s = "o:p{}t\\ion".to_string();
-                                                    let lit = Literal("1".to_string());
-                                                    m.insert(s, lit);
-                                                    m
-                                                })));
+            let piece = parse(&s, 0, 0).expect("Failed to parse");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq({
+                    let mut res = HashMap::new();
+                    let lit = Literal("1".to_string());
+                    res.insert("o:p{}t\\ion".to_string(), lit);
+                    res
+                })
+            ]));
         }
 
         test multiple_options() {
             let s = "{foobar::a=a:b=b}";
-            let pieces = parse(&s, 0, 0).expect("Parse failed");
-            assert_that!(&pieces.len(), eq(1));
-            let piece = &pieces[0];
-            assert_that!(piece, eq(Placeholder(vec!["foobar".to_string()],
-                                    Vec::new(),
-                                    Vec::new(),
-                                    {
-                                        let mut m = HashMap::new();
-                                        let a = Literal("a".to_string());
-                                        let b = Literal("b".to_string());
-                                        m.insert("a".to_string(), a);
-                                        m.insert("b".to_string(), b);
-                                        m
-                                    })));
+            let piece = parse(&s, 0, 0).expect("Parse failed");
+            assert_that!(&piece, has_structure!(Placeholder [
+                eq(vec!["foobar".to_string()]),
+                eq(vec![]),
+                eq(vec![]),
+                eq({
+                    let mut res = HashMap::new();
+                    let a = Literal("a".to_string());
+                    let b = Literal("b".to_string());
+                    res.insert("a".to_string(), a);
+                    res.insert("b".to_string(), b);
+                    res
+                })
+            ]));
         }
 
     }
 
+}
+
+/*
     test_suite! {
         name errors;
         use galvanic_assert::matchers::*;
