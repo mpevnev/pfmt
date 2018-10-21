@@ -1444,6 +1444,26 @@ mod fmt_tests {
 
     }
 
+    test_suite! {
+        name placeholder_substitution;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+        use {FormatTable, Fmt};
+
+        test placeholder_in_options() {
+            let p1 = 3;
+            let p2 = 5;
+            let f = 0.7654321;
+            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            table.insert("p1", &p1);
+            table.insert("p2", &p2);
+            table.insert("f", &f);
+            let s = table.format("{f::prec={p1}}, {f::prec={p2}}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("0.765, 0.76543"));
+        }
+
+    }
+
 }
 
 /* ---------- tests for FormatTables ---------- */
