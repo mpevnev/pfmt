@@ -7,37 +7,90 @@
  * `format!` from the standard library, there is no restriction that format
  * strings need to be static; in fact the whole point of the library is to
  * allow moving as much control over formatting process into the format strings
- * themselves (and ideally those - in user-editable config files).
+ * themselves (and ideally those - into user-editable config files).
  *
  * There are several `impl`s of `FormatTable`, most notable for `HashMap`s
- * (with either `str` or `String` keys, and `Borrow<Fmt>` values, which means a
- * bit of type annotations required to use those) and `Vec`s (with
- * `Borrow<Fmt>` elements). The method on `FormatTable` to format a string is
- * `format(&self, format_string: &str) -> Result<String, FormattingError>`
+ * (with either `str` or `String` keys, and `Borrow<dyn Fmt>` values, which
+ * means a bit of type annotations required to use them) and `Vec`s (also with
+ * `Borrow<dyn Fmt>` elements). The method on `FormatTable` to format a string
+ * is `format(&self, format_string: &str) -> Result<String, FormattingError>`
  *
- * Each format string consists of one or several literals and placeholders,
- * optionally separated by colons ("`:`"). If you need a colon in your literal
- * or some part of a placeholder, you need to escape it: `"\:"`. In its
- * simplest form, a placeholder looks like this: `"{foobar}"` (brackets can be
- * escaped too, if you need them in a literal or somewhere else). This will
- * request the format table that does the formatting to lookup a `Fmt` named
- * "foobar" and insert it contents there, or fail if it cannot find it (or
- * produce it - see 'More fun' section). Of course, this alone is not much use.
- * Most `Fmt`s support flags that can change the output of the formatting
- * procedure, for instance floats can request to be printed in exponential
- * notation. Flags are just single characters and are separated from the
- * identifier with a colon: `"{foobar:flags}"`. A trailing colon is allowed.
- * Some `Fmt`s also support options, which are specified after the flags (and
- * if you want to use options, you need a flags section, even if it's empty)
- * and are separated by colons: `"{foobar::option1=value1:option2=value2}"`.
- * There aren't too many options at the moment. There is also a possibility of
- * giving arguments to a placeholder, but there's no implementation (yet) of a
- * `FormatTable` that takes advantage of it.
+ * # Format string syntax
+ * A format string consists of literals and placeholders. They can be separated
+ * by colons, but this is not required. Just keep in mind that colons need to
+ * be escaped in literals.
  *
- * See each implementation's entry to learn all the options and flags it
- * supports.
+ * A literal is any string not containing unescaped opening brackets "`{`" or
+ * colons "`:`". Escaping is done in the usual fashion, with backslashes.
  *
- * So let's see some examples how this all is tied together.
+ * A placeholder has a more complex structure. Each placeholder is contained
+ * within a set of curly brackets, and starts with a name of the `Fmt` it
+ * requests formatting from. Name is a dot-separated list of segments denoting
+ * access to a (possibly nested) `Fmt`. There must be at least one segment, and
+ * empty segments are not allowed (`FormattingError`s happen in both cases).
+ * All of the following are valid name-only placeholders:
+ * * `"{name}"`
+ * * `"{a.path.to.some.nested.field}"`
+ * * `r"{escapes.\{are\}.allowed}"`
+ *
+ * Note that trailing and leading whitespace is stripped from each segment
+ * (which means that whitespace-only segments are not allowed as well as empty
+ * segments).
+ *
+ * The name may be followed by an arguments block. An arguments block is just a
+ * valid format string surrounded by a pair of curly brackets. Colons take on a
+ * special meaning in argument blocks: they separate individual arguments.
+ * While in a top-level format string the following two would behave
+ * identically, they are very different if used as arguments:
+ * * `"{foo{baz}}"`
+ * * `"{foo:{baz}}"`
+ *
+ * If used as an argument block, the first string would form a single argument,
+ * concatenating a literal `"foo"` and the expansion of placeholder `"baz"`.
+ * The second would form two arguments instead.
+ *
+ * Here are some examples of valid placeholders with arguments:
+ * * `"{name{simple!}}"`
+ * * `"{name{two:arguments}}"`
+ * * `"{name{{a}{b}:{c}foobar}}"`
+ * * `"{nested{{also.can.have.arguments{arg}}}}"`
+ *
+ * There's one limitation to the above: there is a rather arbitrary limit of
+ * 100 to the allowed nesting of placeholders inside placeholders in general
+ * and inside argument lists in particular, to avoid blowing the stack up by
+ * mistake of from malice.
+ *
+ * After the argument block (or after the name if there is no arguments) may be
+ * a flags block. If the flags block follows the name, it has to be separated
+ * from it by a colon. If the flags block follows an argument list, it may or
+ * may not be separated from it by the colon. Flags block may be empty, or
+ * contain one or more single-character flags. Flags can be repeated, the exact
+ * meaning of the repetition depends on the `Fmt` the flags will be fed to. If 
+ * the flags block is followed by options (see below) it has to be terminated
+ * with a colon, otherwise the colon is optional.
+ *
+ * Here are some examples of placeholders with flags:
+ * * `"{name:a=}"`
+ * * `"{name{arg}asdf}"`
+ * * `"{name{arg}:asdf:}"`
+ *
+ * Finally, a placeholder can contain zero or more options after the flags
+ * block. Note that if the options are present, flags block must be present as
+ * well (but may be empty). Options are key-value pairs, with keys being simple
+ * strings with all leading and trailing whitespace stripped, while values can
+ * be any valid format strings (the same caveat about nesting as with arguments
+ * applies here as well). A key is separated from a value by an equals sign.
+ * Key-value pairs are separated by colons. Empty values are allowed, empty
+ * keys are not.
+ *
+ * Here are some examples of placeholders with options:
+ * * `"{name::opt=value}"`
+ * * `"{name::a=foo:b=baz}"`
+ * * `"{name::opt=foo{can.be.a.placeholder.as.well}}"`
+ *
+ * Different implementations of `Fmt` support different flags and options, see
+ * each entry to find out which. There is also a group of common options,
+ * described in a separate section below.
  *
  * # Examples
  * Let's start with something boring:
@@ -47,7 +100,7 @@
  *
  * let i = 2;
  * let j = 5;
- * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table.insert("i", &i);
  * table.insert("j", &j);
  * let s = table.format("i = {i}, j = {j}").unwrap();
@@ -62,7 +115,7 @@
  * let s = "a_really_long_string";
  * let i = 10;
  * let j = 12;
- * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table.insert("s", &s);
  * table.insert("i", &i);
  * table.insert("j", &j);
@@ -78,7 +131,7 @@
  *
  * let a = true;
  * let b = false;
- * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table.insert("a", &a);
  * table.insert("b", &b);
  * let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
@@ -89,14 +142,14 @@
  * use pfmt::{Fmt, FormatTable};
  * let i = 1;
  * let j = 2;
- * let table: Vec<&Fmt> = vec![&i, &j];
+ * let table: Vec<&dyn Fmt> = vec![&i, &j];
  * let s = table.format("{0}, {1}, {0}").unwrap();
  * assert_eq!(s, "1, 2, 1");
  * ```
  * All of the above examples used references as the element type of the format
  * tables, but `FormatTable` is implemented (for hashmaps and vectors) for
- * anything that is `Borrow<Fmt>`, which means boxes, and reference counters
- * and more. Tables can fully own the data:
+ * anything that is `Borrow<dyn Fmt>`, which means boxes, and reference
+ * counters and more. Tables thus can fully own the data:
  * ```
  * use std::collections::HashMap;
  * use pfmt::{Fmt, FormatTable};
@@ -143,7 +196,7 @@
  * }
  * 
  * let p = Point { x: 1, y: 2 };
- * let mut table: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table.insert("p", &p);
  * let s = table.format("{p.x}, {p.y}").unwrap();
  * assert_eq!(s, "1, 2");
@@ -245,10 +298,10 @@
  * let i1 = 10;
  * let i2 = 100;
  * let j = 2;
- * let mut table1: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table1: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table1.insert("i", &i1);
  * table1.insert("j", &j);
- * let mut table2: HashMap<&str, &Fmt> = HashMap::new();
+ * let mut table2: HashMap<&str, &dyn Fmt> = HashMap::new();
  * table2.insert("i", &i2);
  * let s = (table2, table1).format("{i}, {j}").unwrap();
  * assert_eq!(s, "100, 2");
@@ -611,6 +664,7 @@ where
 /// This instance is aware of the following flags:
 /// * `y`, which changes the output from true/false to yes/no;
 /// * `Y`, which changes the output to Y/N.
+///
 /// Common options are recognized.
 impl Fmt for bool {
     fn format(
@@ -647,6 +701,7 @@ impl Fmt for bool {
 }
 
 /// This instance has no special flags.
+///
 /// Common options are recognized.
 impl Fmt for char {
     fn format(
@@ -670,6 +725,7 @@ impl Fmt for char {
 /// * `+`, which forces display of the sign;
 /// * `e`, which changes the output to the scientific, or exponential,
 /// notation.
+///
 /// Common options are recognized.
 /// Common numeric options are also recognized.
 impl Fmt for f32 {
@@ -699,6 +755,7 @@ impl Fmt for f32 {
 /// This instance is aware of the following flags:
 /// * `+`, which forces display of the sign;
 /// * `e`, which changes the output to scientific format.
+///
 /// Common options are recognized.
 /// Common numeric options are also recognized.
 impl Fmt for f64 {
@@ -732,6 +789,7 @@ impl Fmt for f64 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for i8 {
     fn format(
@@ -759,6 +817,7 @@ impl Fmt for i8 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for i16 {
     fn format(
@@ -786,6 +845,7 @@ impl Fmt for i16 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for i32 {
     fn format(
@@ -813,6 +873,7 @@ impl Fmt for i32 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for i64 {
     fn format(
@@ -840,6 +901,7 @@ impl Fmt for i64 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for i128 {
     fn format(
@@ -867,6 +929,7 @@ impl Fmt for i128 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes output hexadecimal;
+///
 /// Common and common numeric options are recognized.
 impl Fmt for isize {
     fn format(
@@ -888,6 +951,7 @@ impl Fmt for isize {
 }
 
 /// This instance has no special flags.
+///
 /// Common options are recognized.
 impl<'a> Fmt for &'a str {
     fn format(
@@ -908,6 +972,7 @@ impl<'a> Fmt for &'a str {
 }
 
 /// This instance has no special flags.
+///
 /// Common options are recognized.
 impl Fmt for String {
     fn format(
@@ -934,6 +999,7 @@ impl Fmt for String {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for u8 {
     fn format(
@@ -963,6 +1029,7 @@ impl Fmt for u8 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for u16 {
     fn format(
@@ -992,6 +1059,7 @@ impl Fmt for u16 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for u32 {
     fn format(
@@ -1021,6 +1089,7 @@ impl Fmt for u32 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for u64 {
     fn format(
@@ -1050,6 +1119,7 @@ impl Fmt for u64 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for u128 {
     fn format(
@@ -1079,6 +1149,7 @@ impl Fmt for u128 {
 /// * `p`, which in combination with '`b`', '`o`' or '`x`' adds a base prefix
 /// to the output.
 /// * `x`, which makes the output hexadecimal.
+///
 /// Common and common numeric options are recognized.
 impl Fmt for usize {
     fn format(
@@ -1112,14 +1183,14 @@ mod fmt_tests {
         use {FormatTable, Fmt, FormattingError};
 
         test unknown_fmt() {
-            let table: HashMap<&str, &Fmt> = HashMap::new();
+            let table: HashMap<&str, &dyn Fmt> = HashMap::new();
             let s = table.format("i = {i}");
             assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i".to_string()))));
         }
 
         test unknown_fmt_nested() {
             let i = 1;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i.a}");
             assert_that!(&s, eq(Err(FormattingError::UnknownFmt("i.a".to_string()))));
@@ -1128,7 +1199,7 @@ mod fmt_tests {
         test integers_simple_1() {
             let i = 1;
             let j = 23;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             table.insert("j", &j);
             let s = table.format("i = {i}, j = {j}").unwrap();
@@ -1152,7 +1223,7 @@ mod fmt_tests {
         test flags() {
             let a = true;
             let b = false;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("a", &a);
             table.insert("b", &b);
             let s = table.format("{a}, {b:y}, {b:Y}").unwrap();
@@ -1169,7 +1240,7 @@ mod fmt_tests {
 
         test boring() {
             let c = 'z';
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("c", &c);
             let s = table.format("{c}, {c::width=l5}!").unwrap();
             assert_that!(&s.as_str(), eq("z, z    !"));
@@ -1185,7 +1256,7 @@ mod fmt_tests {
 
         test exp_precision_neg() {
             let f: f32 = 1_234_567.891;
-            let mut table: HashMap<String, &Fmt> = HashMap::new();
+            let mut table: HashMap<String, &dyn Fmt> = HashMap::new();
             table.insert("f".to_string(), &f);
             let s = table.format("{f:e+:prec=-1}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("+1.23457e6"));
@@ -1193,7 +1264,7 @@ mod fmt_tests {
 
         test exp_precision_pos() {
             let f: f32 = 1000.123;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f:e:prec=2}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1.00012e3"));
@@ -1201,7 +1272,7 @@ mod fmt_tests {
 
         test exp_negative_power() {
             let f: f32 = 0.0625;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f:e}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("6.25e-2"));
@@ -1209,7 +1280,7 @@ mod fmt_tests {
 
         test norm_rounding_up() {
             let f = 0.2;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f::round=up:prec=0}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1"));
@@ -1217,7 +1288,7 @@ mod fmt_tests {
 
         test norm_rounding_down() {
             let f = 0.8;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f::round=down:prec=0}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0"));
@@ -1225,7 +1296,7 @@ mod fmt_tests {
 
         test norm_rounding_usual() {
             let f = 0.5;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f::round=nearest:prec=0}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1"));
@@ -1233,7 +1304,7 @@ mod fmt_tests {
 
         test negative() {
             let f = -1.0;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("-1"));
@@ -1249,7 +1320,7 @@ mod fmt_tests {
 
         test basic() {
             let i = 10;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("10"));
@@ -1257,7 +1328,7 @@ mod fmt_tests {
 
         test different_bases() {
             let i = 11;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i:b}, {i:o}, {i:x}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1011, 13, b"));
@@ -1265,7 +1336,7 @@ mod fmt_tests {
 
         test base_prefixes() {
             let i = 1;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i:bp}, {i:op}, {i:xp}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0b1, 0o1, 0x1"));
@@ -1273,7 +1344,7 @@ mod fmt_tests {
 
         test bases_for_negative_numbers() {
             let i = -11;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i:b}, {i:o}, {i:x}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("-1011, -13, -b"));
@@ -1281,7 +1352,7 @@ mod fmt_tests {
 
         test rounding() {
             let i = 1235;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i::prec=-1}, {i::prec=-2}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1240, 1200"));
@@ -1289,7 +1360,7 @@ mod fmt_tests {
 
         test rounding_for_negatives() {
             let i = -1235;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i::prec=-1}, {i::prec=-2}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("-1240, -1200"));
@@ -1299,7 +1370,7 @@ mod fmt_tests {
             let o = 0o124;
             let b = 0b1101;
             let x = 0x1a2;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("o", &o);
             table.insert("b", &b);
             table.insert("x", &x);
@@ -1321,7 +1392,7 @@ mod fmt_tests {
 
         test width_left() {
             let string = "foobar";
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("s", &string);
             let s = table.format("{s::width=l10}").unwrap();
             assert_that!(&s.as_str(), eq("foobar    "));
@@ -1329,7 +1400,7 @@ mod fmt_tests {
 
         test width_right() {
             let string = "foobar";
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("s", &string);
             let s = table.format("{s::width=r10}").unwrap();
             assert_that!(&s.as_str(), eq("    foobar"));
@@ -1337,7 +1408,7 @@ mod fmt_tests {
 
         test width_center() {
             let string = "foobar";
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("s", &string);
             let s = table.format("{s::width=c10}").unwrap();
             assert_that!(&s.as_str(), eq("  foobar  "));
@@ -1345,7 +1416,7 @@ mod fmt_tests {
 
         test truncate_left() {
             let string = "1234567890";
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("s", &string);
             let s = table.format("{s::truncate=l5}").unwrap();
             assert_that!(&s.as_str(), eq("67890"));
@@ -1353,7 +1424,7 @@ mod fmt_tests {
 
         test truncate_right() {
             let string = "1234567890";
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("s", &string);
             let s = table.format("{s::truncate=r5}").unwrap();
             assert_that!(&s.as_str(), eq("12345"));
@@ -1422,7 +1493,7 @@ mod fmt_tests {
         test single_nested() {
             let a = Point { x: 0, y: 0 };
             let b = Point { x: 2, y: 10 };
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("a", &a);
             table.insert("b", &b);
             let s = table.format("{a.x}, {b.y}").expect("Failed to format");
@@ -1434,7 +1505,7 @@ mod fmt_tests {
                 start: Point { x: 0, y: 2 },
                 end: Point { x: 6, y: 10},
             };
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("line", &line);
             let s = table.format("{line.start.x}, {line.end.y}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("0, 10"));
@@ -1442,7 +1513,7 @@ mod fmt_tests {
 
         test namespace_only() {
             let p = Point { x: 1, y: 2 };
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("p", &p);
             let s = table.format("{p}");
             assert_that!(&s, eq(Err(FormattingError::NamespaceOnlyFmt("p".to_string()))));
@@ -1460,7 +1531,7 @@ mod fmt_tests {
             let p1 = 3;
             let p2 = 5;
             let f = 0.7654321;
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("p1", &p1);
             table.insert("p2", &p2);
             table.insert("f", &f);
@@ -1484,7 +1555,7 @@ mod table_tests {
         test unknown_fmt_1() {
             let i = 1;
             let j = 2;
-            let table: Vec<&Fmt> = vec![&i, &j];
+            let table: Vec<&dyn Fmt> = vec![&i, &j];
             let err = table.format("{10}").expect_err("Unexpectedly found a fmt");
             assert_that!(&err, eq(FormattingError::UnknownFmt("10".to_string())));
         }
@@ -1492,7 +1563,7 @@ mod table_tests {
         test unknown_fmt_2() {
             let i = 1;
             let j = 2;
-            let table: Vec<&Fmt> = vec![&i, &j];
+            let table: Vec<&dyn Fmt> = vec![&i, &j];
             let err = table.format("{-3}").expect_err("Unexpectedly found a fmt");
             assert_that!(&err, eq(FormattingError::UnknownFmt("-3".to_string())));
         }
@@ -1500,7 +1571,7 @@ mod table_tests {
         test boring() {
             let i = 1;
             let j = 2;
-            let table: Vec<&Fmt> = vec![&i, &j];
+            let table: Vec<&dyn Fmt> = vec![&i, &j];
             let s = table.format("{0}, {1}").expect("Failed to format");
             assert_that!(&s, eq("1, 2".to_string()));
         }
