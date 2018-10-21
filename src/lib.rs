@@ -1135,6 +1135,12 @@ mod fmt_tests {
             assert_that!(&s.as_str(), eq("i = 1, j = 23"));
         }
 
+        test separated_by_colons() {
+            let table: HashMap<&str, &dyn Fmt> = HashMap::new();
+            let s = table.format("a:b").unwrap();
+            assert_that!(&s.as_str(), eq("ab"));
+        }
+
     }
 
     test_suite! {
