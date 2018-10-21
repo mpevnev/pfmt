@@ -55,21 +55,37 @@ pub enum ParseError {
     EmptyOptionName(usize),
 }
 
-pub fn parse(input: &str, position: usize) -> Result<Piece, ParseError> {
+pub fn parse(
+    input: &str,
+    position: usize,
+    recursion_depth: u8
+) -> Result<Piece, ParseError> {
     validate_brackets(input)?;
     let mut pieces = Vec::new();
     for chunk in split(input, position) {
-        pieces.push(parse_chunk(chunk)?);
+        pieces.push(parse_chunk(chunk, recursion_depth)?);
     }
     Ok(Piece::Multi(pieces))
 }
 
 /// Transform an input chunk into a literal or a placeholder.
-fn parse_chunk<'a>(chunk: InputChunk<'a>) -> Result<Piece, ParseError> {
+fn parse_chunk<'a>(
+    chunk: InputChunk<'a>,
+    recursion_depth: u8
+) -> Result<Piece, ParseError> {
+    if recursion_depth >= MAX_RECURSION_DEPTH {
+        return Ok(parse_literal(chunk.input))
+    }
     match chunk.kind {
         InputChunkKind::Literal => Ok(parse_literal(chunk.input)),
-        InputChunkKind::Placeholder => parse_placeholder(chunk.input, chunk.start),
-        InputChunkKind::MultiplePieces => parse(chunk.input, chunk.start),
+        InputChunkKind::Placeholder => parse_placeholder(
+            chunk.input,
+            chunk.start,
+            recursion_depth),
+        InputChunkKind::MultiplePieces => parse(
+            chunk.input,
+            chunk.start,
+            recursion_depth),
     }
 }
 
@@ -95,12 +111,16 @@ fn parse_literal(input: &str) -> Piece {
 }
 
 /// Transform an input string into a placeholder.
-fn parse_placeholder(input: &str, position: usize) -> Result<Piece, ParseError> {
+fn parse_placeholder(
+    input: &str,
+    position: usize,
+    recursion_depth: u8
+) -> Result<Piece, ParseError> {
     let mut iter = input.char_indices().peekable();
     let name = extract_name(&mut iter, position)?;
-    let args = extract_args(input, &mut iter, position)?;
+    let args = extract_args(input, &mut iter, position, recursion_depth)?;
     let flags = extract_flags(&mut iter);
-    let options = extract_options(input, &mut iter, position)?;
+    let options = extract_options(input, &mut iter, position, recursion_depth)?;
     Ok(Piece::Placeholder(name, args, flags, options))
 }
 
@@ -155,6 +175,7 @@ fn extract_args<T>(
     source: &str,
     iter: &mut Peekable<T>,
     position: usize,
+    recursion_depth: u8,
 ) -> Result<Vec<Piece>, ParseError>
 where
     T: Iterator<Item = (usize, char)>,
@@ -167,7 +188,7 @@ where
         let args_portion = extract_between_brackets(source, iter);
         let chunks = split_on_colons(args_portion, position);
         for chunk in chunks.iter() {
-            let piece = parse(chunk.input, chunk.start)?;
+            let piece = parse(chunk.input, chunk.start, recursion_depth + 1)?;
             res.push(piece);
         }
     }
@@ -205,6 +226,7 @@ fn extract_options<T>(
     source: &str,
     iter: &mut Peekable<T>,
     sourcepos: usize,
+    recursion_depth: u8,
 ) -> Result<HashMap<String, Piece>, ParseError>
 where
     T: Iterator<Item = (usize, char)>,
@@ -218,7 +240,7 @@ where
     let chunks = split_on_colons(&source[section_start..], sourcepos + section_start);
     let mut res = HashMap::new();
     for InputChunk { input: chunk, start, .. } in chunks {
-        let (opt, val) = parse_option(chunk, start)?;
+        let (opt, val) = parse_option(chunk, start, recursion_depth)?;
         res.insert(opt, val);
     }
     Ok(res)
@@ -288,8 +310,11 @@ fn split_on_colons(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
 }
 
 /// Parse a key-value pair into an option name and a Piece.
-fn parse_option(input: &str, sourcepos: usize)
-    -> Result<(String, Piece), ParseError>
+fn parse_option(
+    input: &str,
+    sourcepos: usize,
+    recursion_depth: u8
+) -> Result<(String, Piece), ParseError>
 {
     let mut name = String::new();
     let mut prev = None;
@@ -299,7 +324,7 @@ fn parse_option(input: &str, sourcepos: usize)
             prev = if ch == ESCAPE { None } else { Some(ch) };
         } else {
             if ch == SETOPT {
-                let value = parse(&input[i + 1 ..], sourcepos + i + 1)?;
+                let value = parse(&input[i + 1 ..], sourcepos + i + 1, recursion_depth + 1)?;
                 let name = name.trim().to_string();
                 if name.is_empty() {
                     return Err(ParseError::EmptyOptionName(sourcepos))
