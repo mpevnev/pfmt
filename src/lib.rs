@@ -320,7 +320,6 @@ extern crate num;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::ops::Deref;
 
 use parse::{parse, ParseError, Piece};
 
@@ -350,20 +349,22 @@ pub trait Fmt {
 }
 
 /// A collection or producer of format units.
-pub trait FormatTable {
+pub trait FormatTable<'a> {
+    type Item: Fmt;
+
     /// Produce or retrieve a format unit with the given name stem.
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>>;
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item>;
 
     /// Perform formatting of a format string.
     ///
     /// This method is not meant to be overridden. You can, but you would have
     /// to reimplement format strings parser yourself.
-    fn format(&self, input: &str) -> Result<String, FormattingError> {
+    fn format(&'a self, input: &str) -> Result<String, FormattingError> {
         format_one(self, &parse(input, 0, 0)?)
     }
 }
 
-fn format_one<'a, 'b, T: FormatTable + ?Sized>(
+fn format_one<'a, 'b, T: FormatTable<'a> + ?Sized>(
     table: &'a T,
     piece: &'b Piece,
 ) -> Result<String, FormattingError> {
@@ -390,33 +391,6 @@ fn format_one<'a, 'b, T: FormatTable + ?Sized>(
                 res.push_str(&format_one(table, piece)?);
             }
             Ok(res)
-        }
-    }
-}
-
-/* ---------- an important helper thing ---------- */
-
-/// A `Cow` without `ToOwned`.
-pub enum BoxOrRef<'a, T: ?Sized + 'a> {
-    Boxed(Box<T>),
-    Ref(&'a T),
-}
-
-impl<'a, T: ?Sized + 'a> Deref for BoxOrRef<'a, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        match self {
-            BoxOrRef::Boxed(b) => &b,
-            BoxOrRef::Ref(r) => r,
-        }
-    }
-}
-
-impl<'a, T: ?Sized + 'a> Borrow<T> for BoxOrRef<'a, T> {
-    fn borrow(&self) -> &T {
-        match self {
-            BoxOrRef::Boxed(b) => b.borrow(),
-            BoxOrRef::Ref(r) => r,
         }
     }
 }
@@ -518,7 +492,7 @@ impl From<ParseError> for FormattingError {
 
 /* ---------- key implementations ---------- */
 
-impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
+impl<'a, T: Fmt + ?Sized> Fmt for &'a T { 
     fn format(
         &self,
         full_name: &[String],
@@ -527,12 +501,14 @@ impl<'a, T: Borrow<dyn Fmt + 'a>> Fmt for T {
         flags: &[char],
         options: &HashMap<String, String>,
     ) -> Result<String, SingleFmtError> {
-        self.borrow().format(full_name, name, args, flags, options)
+        (*self).format(full_name, name, args, flags, options)
     }
 }
 
-impl<'a, T: FormatTable> FormatTable for &'a T {
-    fn get_fmt<'b, 'c>(&'b self, name: &'c str) -> Option<BoxOrRef<'b, dyn Fmt>> {
+impl<'a, 'b, I: Fmt + 'a, T: FormatTable<'a, Item = &'a I>> FormatTable<'a> for &'b T {
+    type Item = &'a I;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         (*self).get_fmt(name)
     }
 }
@@ -541,27 +517,33 @@ impl<'a, T: FormatTable> FormatTable for &'a T {
 
 /// This implementation recognizes placeholders with string names stored in the
 /// hash map.
-impl<B: Borrow<dyn Fmt>> FormatTable for HashMap<String, B> {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.get(name).map(|b| BoxOrRef::Ref(b.borrow()))
+impl<'a, B: Borrow<dyn Fmt>> FormatTable<'a> for HashMap<String, B> {
+    type Item = &'a dyn Fmt;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
+        self.get(name).map(|b| b.borrow())
     }
 }
 
 /// This implementation recognizes placeholders with string names (represented by
 /// string slices) stored in the hash map.
-impl<'a, B: Borrow<dyn Fmt>> FormatTable for HashMap<&'a str, B> {
-    fn get_fmt<'b, 'c>(&'b self, name: &'c str) -> Option<BoxOrRef<'b, dyn Fmt>> {
-        self.get(name).map(|r| BoxOrRef::Ref(r.borrow()))
+impl<'a, 'b, B: Borrow<dyn Fmt>> FormatTable<'a> for HashMap<&'b str, B> {
+    type Item = &'a dyn Fmt;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
+        self.get(name).map(|b| b.borrow())
     }
 }
 
 /// This implementation recognizes placeholders which names are valid integer
 /// indices into the vector.
-impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+impl<'a, B: Borrow<dyn Fmt>> FormatTable<'a> for Vec<B> {
+    type Item = &'a dyn Fmt;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         if let Ok(index) = name.parse::<usize>() {
             if index < self.len() {
-                Some(BoxOrRef::Ref(self[index].borrow()))
+                Some(self[index].borrow())
             } else {
                 None
             }
@@ -570,6 +552,8 @@ impl<B: Borrow<dyn Fmt>> FormatTable for Vec<B> {
         }
     }
 }
+
+/*
 
 /// This implementation first uses the first table to look up placeholders'
 /// names, and then the second.
@@ -658,6 +642,8 @@ where
             .or_else(|| self.5.get_fmt(name))
     }
 }
+
+*/
 
 /* ---------- implementations of Fmt for standard types ---------- */
 
@@ -1576,6 +1562,7 @@ mod table_tests {
 
     }
 
+    /*
     test_suite! {
         name tuples;
         use galvanic_assert::matchers::*;
@@ -1596,5 +1583,6 @@ mod table_tests {
         }
 
     }
+    */
 
 }
