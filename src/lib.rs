@@ -505,8 +505,8 @@ impl<'a, T: Fmt + ?Sized> Fmt for &'a T {
     }
 }
 
-impl<'a, 'b, I: Fmt + 'a, T: FormatTable<'a, Item = &'a I>> FormatTable<'a> for &'b T {
-    type Item = &'a I;
+impl<'a, 'b, I: Fmt, T: FormatTable<'a, Item = I>> FormatTable<'a> for &'b T {
+    type Item = I;
 
     fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         (*self).get_fmt(name)
@@ -1591,6 +1591,20 @@ mod table_tests {
             let b: Vec<Box<Fmt>> = vec![Box::new(10)];
             let s = (a, b).format("{0}").expect("Failed");
             assert_that!(&s, eq("1".to_string()));
+        }
+
+        test lifetimes() {
+            let i = 10;
+            let j = 12;
+            let v1: Vec<&dyn Fmt> = vec![&i, &j];
+            {
+                let k = 13;
+                let v2: Vec<&dyn Fmt> = vec![&k];
+                let s1 = (&v1, &v2).format("{0}").expect("Failed to format");
+                let s2 = (&v2, &v1).format("{0}").expect("Failed to format");
+                assert_that!(&s1.as_str(), eq("10"));
+                assert_that!(&s2.as_str(), eq("13"));
+            }
         }
 
     }
