@@ -553,29 +553,34 @@ impl<'a, B: Borrow<dyn Fmt>> FormatTable<'a> for Vec<B> {
     }
 }
 
-/*
-
 /// This implementation first uses the first table to look up placeholders'
 /// names, and then the second.
-impl<A, B> FormatTable for (A, B)
+impl<'a, F, A, B> FormatTable<'a> for (A, B)
 where
-    A: FormatTable,
-    B: FormatTable,
+    F: Fmt,
+    A: FormatTable<'a, Item = F>,
+    B: FormatTable<'a, Item = F>,
 {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
-        self.0.get_fmt(name).or_else(|| self.1.get_fmt(name))
+    type Item = F;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
+        self.0.get_fmt(name)
+            .or_else(|| self.1.get_fmt(name))
     }
 }
 
 /// This implementation looks up placeholders' names consecutively in three
-/// other tables.
-impl<A, B, C> FormatTable for (A, B, C)
+/// tables.
+impl<'a, F, A, B, C> FormatTable<'a> for (A, B, C)
 where
-    A: FormatTable,
-    B: FormatTable,
-    C: FormatTable,
+    F: Fmt,
+    A: FormatTable<'a, Item = F>,
+    B: FormatTable<'a, Item = F>,
+    C: FormatTable<'a, Item = F>,
 {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+    type Item = F;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         self.0
             .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
@@ -584,15 +589,18 @@ where
 }
 
 /// This implementation looks up placeholders' names consecutively in four
-/// other tables.
-impl<A, B, C, D> FormatTable for (A, B, C, D)
+/// tables.
+impl<'a, F, A, B, C, D> FormatTable<'a> for (A, B, C, D)
 where
-    A: FormatTable,
-    B: FormatTable,
-    C: FormatTable,
-    D: FormatTable,
+    F: Fmt,
+    A: FormatTable<'a, Item = F>,
+    B: FormatTable<'a, Item = F>,
+    C: FormatTable<'a, Item = F>,
+    D: FormatTable<'a, Item = F>,
 {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+    type Item = F;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         self.0
             .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
@@ -602,16 +610,19 @@ where
 }
 
 /// This implementation looks up placeholders' names consecutively in five
-/// other tables.
-impl<A, B, C, D, E> FormatTable for (A, B, C, D, E)
+/// tables.
+impl<'a, T, A, B, C, D, E> FormatTable<'a> for (A, B, C, D, E)
 where
-    A: FormatTable,
-    B: FormatTable,
-    C: FormatTable,
-    D: FormatTable,
-    E: FormatTable,
+    T: Fmt,
+    A: FormatTable<'a, Item = T>,
+    B: FormatTable<'a, Item = T>,
+    C: FormatTable<'a, Item = T>,
+    D: FormatTable<'a, Item = T>,
+    E: FormatTable<'a, Item = T>,
 {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+    type Item = T;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         self.0
             .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
@@ -621,18 +632,21 @@ where
     }
 }
 
-/// This implementation looks up placeholders' names consecutively in six other
+/// This implementation looks up placeholders' names consecutively in six
 /// tables.
-impl<A, B, C, D, E, F> FormatTable for (A, B, C, D, E, F)
+impl<'a, T, A, B, C, D, E, F> FormatTable<'a> for (A, B, C, D, E, F)
 where
-    A: FormatTable,
-    B: FormatTable,
-    C: FormatTable,
-    D: FormatTable,
-    E: FormatTable,
-    F: FormatTable,
+    T: Fmt,
+    A: FormatTable<'a, Item = T>,
+    B: FormatTable<'a, Item = T>,
+    C: FormatTable<'a, Item = T>,
+    D: FormatTable<'a, Item = T>,
+    E: FormatTable<'a, Item = T>,
+    F: FormatTable<'a, Item = T>,
 {
-    fn get_fmt<'a, 'b>(&'a self, name: &'b str) -> Option<BoxOrRef<'a, dyn Fmt>> {
+    type Item = T;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
         self.0
             .get_fmt(name)
             .or_else(|| self.1.get_fmt(name))
@@ -642,8 +656,6 @@ where
             .or_else(|| self.5.get_fmt(name))
     }
 }
-
-*/
 
 /* ---------- implementations of Fmt for standard types ---------- */
 
@@ -1562,7 +1574,6 @@ mod table_tests {
 
     }
 
-    /*
     test_suite! {
         name tuples;
         use galvanic_assert::matchers::*;
@@ -1583,6 +1594,5 @@ mod table_tests {
         }
 
     }
-    */
 
 }
