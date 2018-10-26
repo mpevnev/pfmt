@@ -1,7 +1,7 @@
 [package]
 name = "pfmt"
 description = "A data formatting library"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Michail Pevnev <mpevnev@gmail.com>"]
 license = "GPL-3.0-or-later"
 documentation = "https://docs.rs/pfmt"
