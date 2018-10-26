@@ -15,20 +15,20 @@ pub enum Justification {
     Right(),
 }
 
-pub fn apply_common_options(
+pub fn apply_common_options<H: std::hash::BuildHasher>(
     name: &[String],
     s: &mut String,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<(), SingleFmtError> {
     apply_truncation(name, s, options)?;
     apply_width(name, s, options)?;
     Ok(())
 }
 
-pub fn apply_width(
+pub fn apply_width<H: std::hash::BuildHasher>(
     name: &[String],
     s: &mut String,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<(), SingleFmtError> {
     if let Some(width_str) = options.get("width") {
         let justification = match width_str.chars().nth(0) {
@@ -77,10 +77,10 @@ pub fn apply_width(
     Ok(())
 }
 
-pub fn apply_truncation(
+pub fn apply_truncation<H: std::hash::BuildHasher>(
     name: &[String],
     s: &mut String,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<(), SingleFmtError> {
     if let Some(opt_str) = options.get("truncate") {
         if opt_str.is_empty() {
@@ -133,12 +133,13 @@ pub enum Rounding {
     Up(),
 }
 
-pub fn float_to_exp<T>(
+pub fn float_to_exp<T, H>(
     name: &[String],
-    f: T, options: &HashMap<String, String>
+    f: T, options: &HashMap<String, String, H>
 ) -> Result<String, SingleFmtError>
 where
     T: num::Float + num::FromPrimitive + Copy + ToString,
+    H: std::hash::BuildHasher,
 {
     if f.is_nan() || f.is_infinite() {
         return Ok(f.to_string());
@@ -174,12 +175,13 @@ where
     Ok(res)
 }
 
-pub fn float_to_normal<T>(
+pub fn float_to_normal<T, H>(
     name: &[String],
-    f: T, options: &HashMap<String, String>
+    f: T, options: &HashMap<String, String, H>
 ) -> Result<String, SingleFmtError>
 where
     T: num::Float + num::FromPrimitive + Copy + ToString,
+    H: std::hash::BuildHasher,
 {
     if f.is_nan() || f.is_infinite() {
         return Ok(f.to_string());
@@ -198,14 +200,15 @@ where
     Ok(f.to_string())
 }
 
-pub fn int_to_str<T>(
+pub fn int_to_str<T, H>(
     name: &[String],
     i: T,
     flags: &[char],
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::ToPrimitive + ToString + Copy,
+    H: std::hash::BuildHasher,
 {
     let prefix = flags.contains(&'p');
     if flags.contains(&'b') {
@@ -221,7 +224,7 @@ where
 
 pub fn add_sign<T>(s: &mut String, signed: T, flags: &[char]) -> Result<(), SingleFmtError>
 where
-    T: num::Signed,
+    T: num::Signed + Copy,
 {
     if signed.is_negative() {
         s.insert(0, '-');
@@ -248,9 +251,9 @@ pub fn join_name(name: &[String]) -> String {
 
 /* ---------- helpers ---------- */
 
-fn get_precision(
+fn get_precision<H: std::hash::BuildHasher>(
     name: &[String],
-    options: &HashMap<String, String>
+    options: &HashMap<String, String, H>
 ) -> Result<Option<i32>, SingleFmtError> {
     if let Some(s) = options.get("prec") {
         if let Ok(i) = s.parse::<i32>() {
@@ -263,21 +266,22 @@ fn get_precision(
     }
 }
 
-fn present_binary<T>(
+fn present_binary<T, H>(
     name: &[String],
     i: T,
     prefix: bool,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
+    H: std::hash::BuildHasher,
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let two = T::from_i32(2).unwrap();
     apply_integer_rounding(name, &mut i, two, options)?;
     let mut chars = Vec::new();
     while i != T::zero() {
-        let ch = ((i % two).to_u8().unwrap() + '0' as u8) as char;
+        let ch = ((i % two).to_u8().unwrap() + b'0') as char;
         chars.push(ch);
         i = i / two;
     }
@@ -288,21 +292,22 @@ where
     Ok(chars.iter().rev().collect())
 }
 
-fn present_octal<T>(
+fn present_octal<T, H>(
     name: &[String],
     i: T,
     prefix: bool,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
+    H: std::hash::BuildHasher,
 {
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let eight = T::from_i32(8).unwrap();
     apply_integer_rounding(name, &mut i, eight, options)?;
     while i != T::zero() {
-        let ch = ((i % eight).to_u8().unwrap() + '0' as u8) as char;
+        let ch = ((i % eight).to_u8().unwrap() + b'0') as char;
         chars.push(ch);
         i = i / eight;
     }
@@ -313,14 +318,15 @@ where
     Ok(chars.iter().rev().collect())
 }
 
-fn present_hexadecimal<T>(
+fn present_hexadecimal<T, H>(
     name: &[String],
     i: T,
     prefix: bool,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::ToPrimitive + Copy,
+    H: std::hash::BuildHasher,
 {
     let mut chars = Vec::new();
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
@@ -329,9 +335,9 @@ where
     while i > T::zero() {
         let index = (i % hex).to_u8().unwrap();
         let ch = if index < 10 {
-            (index + '0' as u8) as char
+            (index + b'0') as char
         } else {
-            (index - 10 + 'a' as u8) as char
+            (index - 10 + b'a') as char
         };
         chars.push(ch);
         i = i / hex;
@@ -343,12 +349,13 @@ where
     Ok(chars.iter().rev().collect())
 }
 
-fn present_decimal<T>(
+fn present_decimal<T, H>(
     name: &[String],
-    i: T, options: &HashMap<String, String>
+    i: T, options: &HashMap<String, String, H>
 ) -> Result<String, SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::Zero + ToString + Copy,
+    H: std::hash::BuildHasher,
 {
     let mut i = if i >= T::zero() { i } else { T::zero() - i };
     let ten = T::from_i32(10).unwrap();
@@ -356,9 +363,9 @@ where
     Ok(i.to_string())
 }
 
-fn get_rounding(
+fn get_rounding<H: std::hash::BuildHasher>(
     name: &[String],
-    options: &HashMap<String, String>
+    options: &HashMap<String, String, H>
 ) -> Result<Option<Rounding>, SingleFmtError> {
     if let Some(s) = options.get("round") {
         if s == "up" {
@@ -389,14 +396,15 @@ where
     res
 }
 
-fn apply_integer_rounding<T>(
+fn apply_integer_rounding<T, H>(
     name: &[String],
     i: &mut T,
     base: T,
-    options: &HashMap<String, String>,
+    options: &HashMap<String, String, H>,
 ) -> Result<(), SingleFmtError>
 where
     T: num::Integer + num::FromPrimitive + num::Zero + num::One + Copy,
+    H: std::hash::BuildHasher,
 {
     if let Some(prec) = get_precision(name, options)? {
         if prec >= 0 {

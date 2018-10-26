@@ -63,7 +63,7 @@ pub fn parse(input: &str, position: usize, recursion_depth: u8) -> Result<Piece,
     validate_brackets(input)?;
     let mut pieces = Vec::new();
     for chunk in split(input, position) {
-        pieces.push(parse_chunk(chunk, recursion_depth)?);
+        pieces.push(parse_chunk(&chunk, recursion_depth)?);
     }
     if pieces.len() == 1 {
         Ok(pieces.remove(0))
@@ -73,7 +73,7 @@ pub fn parse(input: &str, position: usize, recursion_depth: u8) -> Result<Piece,
 }
 
 /// Transform an input chunk into a literal or a placeholder.
-fn parse_chunk<'a>(chunk: InputChunk<'a>, recursion_depth: u8) -> Result<Piece, ParseError> {
+fn parse_chunk(chunk: &InputChunk, recursion_depth: u8) -> Result<Piece, ParseError> {
     if recursion_depth >= MAX_RECURSION_DEPTH {
         return Ok(parse_literal(chunk.input));
     }
@@ -145,12 +145,12 @@ where
             iter.next();
         } else {
             if ch == DOT {
-                name.push(trim_name_segment(segment, position + last_segment_start)?);
+                name.push(trim_name_segment(&segment, position + last_segment_start)?);
                 segment = String::new();
                 last_segment_start = i + 1;
                 iter.next();
             } else if ch == FIELD_SEPARATOR || ch == OPENING_BRACKET {
-                name.push(trim_name_segment(segment, position + last_segment_start)?);
+                name.push(trim_name_segment(&segment, position + last_segment_start)?);
                 return Ok(name);
             } else {
                 if ch != ESCAPE {
@@ -161,7 +161,7 @@ where
             prev = Some(ch);
         }
     }
-    name.push(trim_name_segment(segment, position + last_segment_start)?);
+    name.push(trim_name_segment(&segment, position + last_segment_start)?);
     Ok(name)
 }
 
@@ -202,7 +202,7 @@ where
     }
     let mut res = Vec::new();
     let mut prev = None;
-    while let Some((_, ch)) = iter.next() {
+    for (_, ch) in iter {
         if prev == Some(ESCAPE) {
             res.push(ch);
             prev = if ch == ESCAPE { None } else { Some(ch) };
@@ -249,22 +249,21 @@ fn split(source: &str, sourcepos: usize) -> Vec<InputChunk<'_>> {
     let mut iter = source.char_indices().peekable();
     let mut res = Vec::new();
     while let Some(&(i, ch)) = iter.peek() {
-        let chunk;
-        if ch == OPENING_BRACKET {
+        let chunk = if ch == OPENING_BRACKET {
             let portion = extract_between_brackets(source, &mut iter);
-            chunk = InputChunk {
+            InputChunk {
                 input: portion,
                 start: sourcepos + i,
                 kind: InputChunkKind::Placeholder,
-            };
+            }
         } else {
             let portion = extract_literal(source, &mut iter);
-            chunk = InputChunk {
+            InputChunk {
                 input: portion,
                 start: sourcepos + i,
                 kind: InputChunkKind::Literal,
-            };
-        }
+            }
+        };
         res.push(chunk);
     }
     res
@@ -372,18 +371,16 @@ where
                 prev = Some(ch);
             }
             iter.next();
+        } else if ch == FIELD_SEPARATOR {
+            iter.next();
+            end = i;
+            break;
+        } else if ch == OPENING_BRACKET {
+            end = i;
+            break;
         } else {
-            if ch == FIELD_SEPARATOR {
-                iter.next();
-                end = i;
-                break;
-            } else if ch == OPENING_BRACKET {
-                end = i;
-                break;
-            } else {
-                prev = Some(ch);
-                iter.next();
-            }
+            prev = Some(ch);
+            iter.next();
         }
     }
     &source[start..end]
@@ -422,7 +419,7 @@ where
     unreachable!("A string with imbalanced brackets was passed to 'extract_between_brackets'");
 }
 
-fn trim_name_segment(segment: String, segment_start: usize) -> Result<String, ParseError> {
+fn trim_name_segment(segment: &str, segment_start: usize) -> Result<String, ParseError> {
     let res = segment.trim().to_string();
     if res.is_empty() {
         Err(ParseError::EmptyNameSegment(segment_start))
@@ -445,10 +442,8 @@ fn validate_brackets(source: &str) -> Result<(), ParseError> {
             if ch == OPENING_BRACKET {
                 opening_brackets.push(i);
             }
-            if ch == CLOSING_BRACKET {
-                if opening_brackets.pop().is_none() {
-                    return Err(ParseError::UnbalancedBrackets(i));
-                }
+            if ch == CLOSING_BRACKET && opening_brackets.pop().is_none() {
+                return Err(ParseError::UnbalancedBrackets(i));
             }
             prev = Some(ch);
         }

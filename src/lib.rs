@@ -517,7 +517,11 @@ impl<'a, 'b, I: Fmt, T: FormatTable<'a, Item = I>> FormatTable<'a> for &'b T {
 
 /// This implementation recognizes placeholders with string names stored in the
 /// hash map.
-impl<'a, B: Borrow<dyn Fmt>> FormatTable<'a> for HashMap<String, B> {
+impl<'a, B, H> FormatTable<'a> for HashMap<String, B, H> 
+where
+    B: Borrow<dyn Fmt>,
+    H: std::hash::BuildHasher,
+{
     type Item = &'a dyn Fmt;
 
     fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
@@ -527,7 +531,11 @@ impl<'a, B: Borrow<dyn Fmt>> FormatTable<'a> for HashMap<String, B> {
 
 /// This implementation recognizes placeholders with string names (represented by
 /// string slices) stored in the hash map.
-impl<'a, 'b, B: Borrow<dyn Fmt>> FormatTable<'a> for HashMap<&'b str, B> {
+impl<'a, 'b, B, H> FormatTable<'a> for HashMap<&'b str, B, H> 
+where
+    B: Borrow<dyn Fmt>,
+    H: std::hash::BuildHasher,
+{
     type Item = &'a dyn Fmt;
 
     fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
@@ -736,12 +744,11 @@ impl Fmt for f32 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut res: String;
-        if flags.contains(&'e') {
-            res = util::float_to_exp(full_name, *self, options)?;
+        let mut res = if flags.contains(&'e') {
+            util::float_to_exp(full_name, *self, options)?
         } else {
-            res = util::float_to_normal(full_name, *self, options)?;
-        }
+            util::float_to_normal(full_name, *self, options)?
+        };
         util::add_sign(&mut res, *self, flags)?;
         util::apply_common_options(full_name, &mut res, options)?;
         Ok(res)
@@ -766,12 +773,11 @@ impl Fmt for f64 {
         if !name.is_empty() {
             return Err(SingleFmtError::UnknownSubfmt(util::join_name(full_name)));
         }
-        let mut res: String;
-        if flags.contains(&'e') {
-            res = util::float_to_exp(full_name, *self, options)?;
+        let mut res = if flags.contains(&'e') {
+            util::float_to_exp(full_name, *self, options)?
         } else {
-            res = util::float_to_normal(full_name, *self, options)?;
-        }
+            util::float_to_normal(full_name, *self, options)?
+        };
         util::add_sign(&mut res, *self, flags)?;
         util::apply_common_options(full_name, &mut res, options)?;
         Ok(res)
@@ -1251,7 +1257,7 @@ mod fmt_tests {
         use {FormatTable, Fmt};
 
         test exp_precision_neg() {
-            let f: f32 = 1_234_567.891;
+            let f: f64 = 1_234_567.891;
             let mut table: HashMap<String, &dyn Fmt> = HashMap::new();
             table.insert("f".to_string(), &f);
             let s = table.format("{f:e+:prec=-1}").expect("Failed to format");
@@ -1526,7 +1532,7 @@ mod fmt_tests {
         test placeholder_in_options() {
             let p1 = 3;
             let p2 = 5;
-            let f = 0.7654321;
+            let f = 0.765_432_1;
             let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("p1", &p1);
             table.insert("p2", &p2);
