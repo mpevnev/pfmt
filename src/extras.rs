@@ -19,7 +19,7 @@
 //! 
 //! let mut index = 0;
 //! let mut counter = Lazy::new(move || { index += 1; index });
-//! let mut table: HashMap<&str, &Fmt> = HashMap::new();
+//! let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
 //! table.insert("i", &counter);
 //! let s = table.format("{i} - spam\n{i} - eggs").unwrap();
 //! assert_eq!(&s, "1 - spam\n2 - eggs");
@@ -284,7 +284,7 @@ mod extras_tests {
 
         test lazy() {
             let i = Lazy::new(|| 10_i32);
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &i);
             let s = table.format("{i}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("10"));
@@ -293,7 +293,7 @@ mod extras_tests {
         test mutable_lazy() {
             let mut i = 0;
             let c = Lazy::new(move || { i += 1; i });
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("i", &c);
             let s = table.format("{i}, {i}, {i}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("1, 2, 3"));
@@ -343,7 +343,7 @@ mod extras_tests {
                     Ok(s.to_uppercase())
                 }
             });
-            let mut table: HashMap<&str, &Fmt> = HashMap::new();
+            let mut table: HashMap<&str, &dyn Fmt> = HashMap::new();
             table.insert("f", &f);
             let s = table.format("{f{asdf}}").expect("Failed to format");
             assert_that!(&s.as_str(), eq("ASDF"));
