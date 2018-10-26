@@ -24,6 +24,25 @@
 //! let s = table.format("{i} - spam\n{i} - eggs").unwrap();
 //! assert_eq!(&s, "1 - spam\n2 - eggs");
 //! ```
+//!
+//! # Single-entry format tables
+//! Sometimes all you need is a quick and dirty formatting, which clashes
+//! somewhat with the nature of the format tables in the main module - their
+//! construction is quite burdensome. Enter `Mono` and tuples. A `Mono` is a
+//! tuple struct with a string key (or anything that derefs to a `str`) and
+//! some `Fmt` value. It is also a format table. The following works:
+//! ```
+//! use pfmt::FormatTable;
+//! use pfmt::extras::Mono;
+//! 
+//! let a = Mono("a", 5);
+//! let b = Mono("b", "foobar");
+//! let s = (&a, &b).format("{a}, {b}").unwrap();
+//! assert_eq!(&s, "5, foobar");
+//! ```
+//!
+//! They can be combined with hash tables and vectors in the same fashion, the
+//! main module docs have an example.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -251,6 +270,7 @@ where
 
 /* ---------- single-entry format tables ---------- */
 
+/// A format table with a single entry, accessed by a string key.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Mono<S: Deref<Target = str>, T: Fmt>(pub S, pub T);
 
