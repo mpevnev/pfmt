@@ -27,8 +27,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 
-use {Fmt, SingleFmtError};
+use {Fmt, SingleFmtError, FormatTable};
 
 /* ---------- simple closure support ---------- */
 
@@ -248,6 +249,25 @@ where
     }
 }
 
+/* ---------- single-entry format tables ---------- */
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct Mono<S: Deref<Target = str>, T: Fmt>(pub S, pub T);
+
+impl<'a, S: Deref<Target = str>, T: Fmt + 'a> FormatTable<'a> for Mono<S, T> {
+    type Item = &'a dyn Fmt;
+
+    fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
+        if name == self.0.deref() {
+            Some(&self.1)
+        } else {
+            None
+        }
+    }
+}
+
+//pub struct MonoF<A, B: Fmt, F: Fn(A) -> B>(T, F)
+
 /* ---------- tests ---------- */
 
 #[cfg(test)]
@@ -331,4 +351,31 @@ mod extras_tests {
 
     }
 
+    test_suite! {
+        name mono;
+        use std::collections::HashMap;
+        use galvanic_assert::matchers::*;
+
+        use {FormatTable, Fmt};
+        use extras::Mono;
+
+        test several_monos() {
+            let a = Mono("a", 5_i32);
+            let b = Mono("b", "foobar");
+            let s = (&a, &b).format("{a}, {b}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("5, foobar"));
+        }
+
+        test monos_and_hashmaps() {
+            let a = Mono("foobar", 10);
+            let t = {
+                let mut res: HashMap<&str, &dyn Fmt> = HashMap::new();
+                res.insert("a", &10);
+                res
+            };
+            let s = (&a, &t).format("{foobar}, {a}").expect("Failed to format");
+            assert_that!(&s.as_str(), eq("10, 10"));
+        }
+
+    }
 }

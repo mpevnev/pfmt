@@ -260,51 +260,54 @@
  * three to this option.
  *
  * # More fun
- * Format tables are not required to actually *hold* the `Fmt`s. They can
- * produce those on the fly, if you make them to. You only need to implement
- * the `get_fmt` method a bit differently:
+ * Format tables are pretty flexible in the type of format units they can
+ * return from the `get_fmt` method. They don't even have to actually contain
+ * the `Fmt`s, you can make your format tables produce format units on the fly.
+ * The drawback is that you'll probably lose ability to combine format tables
+ * via tuples (see below) if your `Item` is not `&'a dyn Fmt`. But variations
+ * on the following are possible (and possibly useful):
  * ```
- * use pfmt::{Fmt, FormatTable, BoxOrRef};
- *
+ * use pfmt::{Fmt, FormatTable};
+ * 
  * struct Producer { }
- *
- * impl FormatTable for Producer {
- *      fn get_fmt<'a, 'b>(&'a self, name: &'b str)
- *          -> Option<BoxOrRef<'a, dyn Fmt>>
- *      {
- *          if let Ok(i) = name.parse::<i32>() {
- *              Some(BoxOrRef::Boxed(Box::new(i)))
- *          } else {
- *              None
- *          }
- *      }
+ * 
+ * impl<'a> FormatTable<'a> for Producer {
+ *     type Item = i32;
+ * 
+ *     fn get_fmt(&'a self, name: &str) -> Option<Self::Item> {
+ *         name.parse().ok()
+ *     }
  * }
- *
+ *  
  * let table = Producer { };
  * let s = table.format("{1}, {12}").unwrap();
  * assert_eq!(s, "1, 12");
  * ```
- * The above example is not particularly useful, but shows the point.
  *
  * There's also an implementation of `FormatTable` for tuples (up to 6-tuples)
- * that contain format tables. When encountering a placeholder, it first
- * searches for the relevant `Fmt` in the first table, then in the second and
- * so on. This allows to easily override some `Fmt`s or provide defaults
- * without changing the tables themselves.
+ * that contain format tables with the same `Item` type. It searches the format
+ * tables in order and uses the first `Fmt` successfully returned by `get_fmt`.
+ * This is particularly useful with `Mono` format table from the `extras`
+ * module. It allows easy combining format tables or providing defaults or
+ * overrides without modifying the tables in question.
  * ```
  * use std::collections::HashMap;
+ * 
  * use pfmt::{Fmt, FormatTable};
- *
- * let i1 = 10;
- * let i2 = 100;
- * let j = 2;
- * let mut table1: HashMap<&str, &dyn Fmt> = HashMap::new();
- * table1.insert("i", &i1);
- * table1.insert("j", &j);
- * let mut table2: HashMap<&str, &dyn Fmt> = HashMap::new();
- * table2.insert("i", &i2);
- * let s = (table2, table1).format("{i}, {j}").unwrap();
- * assert_eq!(s, "100, 2");
+ * use pfmt::extras::Mono;
+ * 
+ * let a = Mono("a", 5);
+ * let b = Mono("b", "foo");
+ * let t = {
+ *     let mut res: HashMap<&str, Box<dyn Fmt>> = HashMap::new();
+ *     res.insert("a", Box::new("not five"));
+ *     res.insert("b", Box::new("not foo"));
+ *     res
+ * };
+ * let s1 = (&a, &b, &t).format("{a}, {b}").expect("Failed to format");
+ * let s2 = (&a, &t, &b).format("{a}, {b}").expect("Failed to format");
+ * assert_eq!(s1, "5, foo");
+ * assert_eq!(s2, "5, not foo");
  * ```
  */
 
