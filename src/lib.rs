@@ -288,7 +288,7 @@
  * that contain format tables with the same `Item` type. It searches the format
  * tables in order and uses the first `Fmt` successfully returned by `get_fmt`.
  * This is particularly useful with `Mono` format table from the `extras`
- * module. It allows easy combining format tables or providing defaults or
+ * module. It allows to easily combine format tables or provide defaults or
  * overrides without modifying the tables in question.
  * ```
  * use std::collections::HashMap;
