@@ -311,9 +311,9 @@
  * ```
  */
 
-#[cfg(test)]
+#[cfg(test)] #[macro_use]
 extern crate galvanic_assert;
-#[cfg(test)]
+#[cfg(test)] #[macro_use]
 extern crate galvanic_test;
 
 extern crate num;

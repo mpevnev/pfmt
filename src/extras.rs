@@ -266,8 +266,6 @@ impl<'a, S: Deref<Target = str>, T: Fmt + 'a> FormatTable<'a> for Mono<S, T> {
     }
 }
 
-//pub struct MonoF<A, B: Fmt, F: Fn(A) -> B>(T, F)
-
 /* ---------- tests ---------- */
 
 #[cfg(test)]
